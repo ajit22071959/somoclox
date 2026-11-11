@@ -592,6 +592,16 @@
       opacity: 0.35;
     }
     .hour-tick-major { opacity: 0.55; }
+    .hour-tick-repeat { opacity: 0.35; background: repeating-linear-gradient(to bottom, var(--line) 0 3px, transparent 3px 6px); }
+    .dst-mark {
+      position: absolute;
+      top: -2px;
+      bottom: -2px;
+      width: 0;
+      margin-left: -1px;
+      border-left: 2px dashed #e8bc7b99;
+      pointer-events: none;
+    }
     .lanes {
       display: grid;
       gap: 6px;

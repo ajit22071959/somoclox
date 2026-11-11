@@ -83,6 +83,8 @@
     meetDateManual: false,
     duration: Tz.DEFAULT_DURATION_MIN,
     scrubMin: 0,
+    // On a fall-back day a wall time happens twice; true = use the later one.
+    laterOccurrence: false,
   };
 
   // Last successful conversion, used by copy, calendar and countdown.
@@ -296,6 +298,7 @@
       }
       if (hash.date) state.date = hash.date;
       if (hash.time) state.time = hash.time;
+      state.laterOccurrence = !!hash.laterOccurrence;
       if (hash.meetingDate) state.meetingDate = hash.meetingDate;
       if (location.hash.indexOf("h=") !== -1 || location.search.indexOf("h=") !== -1) {
         state.hour12 = hash.hour12;
@@ -343,6 +346,7 @@
       perCityHours: state.perCityHours,
       cityHours: state.perCityHours ? cityHoursList() : [],
       duration: state.duration,
+      laterOccurrence: state.laterOccurrence,
     };
   }
 
@@ -889,6 +893,18 @@
       updatePickMarker();
       return;
     }
+    if (result.kind === "ambiguous" && state.laterOccurrence && result.instants.length > 1) {
+      const later = result.instants[1];
+      result.instant = later;
+      result.from.wall = Tz.getWallParts(state.from, later);
+      result.note = "This local time occurs twice when clocks fall back. Showing the later occurrence, after the change.";
+      result.results.forEach(function (row) {
+        row.wall = Tz.getWallParts(row.timeZone, later);
+        row.dayShift = Tz.dayShiftLabel(result.from.wall, row.wall);
+        row.gap = Tz.describeGap(state.from, row.timeZone, later);
+        row.gapDiffersFromToday = row.gap.minutes !== row.gapToday.minutes;
+      });
+    }
     const rows = [{ tz: state.from, label: fromLabel, wall: result.from.wall }].concat(
       result.results.map(function (row, i) {
         return {
@@ -922,7 +938,8 @@
       ul.className = "alt-list";
       result.ambiguousWalls.forEach(function (row, i) {
         const li = document.createElement("li");
-        const label = i === 0 ? "Earlier" : "Later";
+        const inUse = (i === 1) === !!state.laterOccurrence;
+        const label = (i === 0 ? "Earlier" : "Later") + (inUse ? ", shown below" : "");
         const bits = row.targets.map(function (t) {
           return labelForZone(t.timeZone, state.to) + " " + Tz.formatTimeShort(t.wall, state.hour12) +
             " (" + t.wall.offsetLabel + ")";
@@ -1091,6 +1108,10 @@
     const wall = Tz.getWallParts(state.from, t);
     state.date = Tz.isoDate(wall);
     state.time = Tz.pad2(wall.hour) + ":" + Tz.pad2(wall.minute);
+    const resolved = Tz.resolveLocal(state.from, {
+      year: wall.year, month: wall.month, day: wall.day, hour: wall.hour, minute: wall.minute, second: 0,
+    });
+    state.laterOccurrence = resolved.kind === "ambiguous" && resolved.instants.length > 1 && t === resolved.instants[1];
     els.convDate.value = state.date;
     els.convTime.value = state.time;
     state.meetDateManual = !!(state.meetingDate && state.meetingDate !== state.date);
@@ -1243,33 +1264,47 @@
     return h + suffix;
   }
 
-  function hourOffset(hour) {
-    return (hour / 24 * 100) + "%";
-  }
-
-  function renderHourAxis() {
+  function renderHourAxis(axisZone, dayStart, dayEnd) {
     const axis = els.barLabel;
     const grid = els.hourGrid;
     if (axis) axis.innerHTML = "";
     if (grid) grid.innerHTML = "";
-    for (let i = 0; i <= 24; i++) {
-      const left = hourOffset(i);
+    const info = Tz.axisTicks(axisZone, dayStart, dayEnd);
+    info.ticks.forEach(function (t) {
+      const left = (t.fraction * 100) + "%";
       if (grid) {
         const tick = document.createElement("span");
-        tick.className = "hour-tick" + (i % 3 === 0 ? " hour-tick-major" : "");
+        tick.className = "hour-tick" + (t.major ? " hour-tick-major" : "") + (t.repeat ? " hour-tick-repeat" : "");
         tick.style.left = left;
-        tick.setAttribute("data-hour", String(i));
+        tick.setAttribute("data-hour", String(t.hour) + (t.repeat ? "r" : ""));
         grid.appendChild(tick);
       }
-      if (axis && i % 3 === 0) {
+      if (axis && t.label) {
         const lab = document.createElement("span");
-        lab.className = "axis-label" + (i % 6 === 0 ? " axis-label-coarse" : " axis-label-fine");
+        lab.className = "axis-label" + (t.coarse ? " axis-label-coarse" : " axis-label-fine");
         lab.style.left = left;
-        lab.setAttribute("data-hour", String(i));
-        lab.textContent = formatAxisHour(i, state.hour12);
+        lab.setAttribute("data-hour", String(t.hour));
+        lab.textContent = formatAxisHour(t.hour, state.hour12);
         axis.appendChild(lab);
       }
-    }
+    });
+    info.changes.forEach(function (c) {
+      if (!grid) return;
+      const mark = document.createElement("span");
+      mark.className = "dst-mark";
+      mark.style.left = (c.fraction * 100) + "%";
+      grid.appendChild(mark);
+    });
+    return info;
+  }
+
+  function clockChangeText(info, label) {
+    return info.changes.map(function (c) {
+      const dir = c.deltaMin > 0 ? "forward" : "back";
+      return "Clocks in " + label + " go " + dir + " " + Tz.formatDuration(Math.abs(c.deltaMin)) +
+        " at " + Tz.formatTimeShort(c.wallBefore, state.hour12) + " on this date, so the day is " +
+        (Math.round(info.hours * 10) / 10) + " hours long.";
+    }).join(" ");
   }
 
   function formatWindowRange(startWall, endWall) {
@@ -1331,8 +1366,9 @@
     const dayStart = overlap.dayStart;
     const dayEnd = overlap.dayEnd;
     const length = dayEnd - dayStart;
-    renderHourAxis();
-    els.barCaption.textContent = "Times shown in " + fromLabel + " time";
+    const axisInfo = renderHourAxis(state.from, dayStart, dayEnd);
+    els.barCaption.textContent = "Times shown in " + fromLabel + " time." +
+      (axisInfo.changes.length ? " " + clockChangeText(axisInfo, fromLabel) : "");
 
     function addLane(name, intervals, overlapLane, zone) {
       const lane = document.createElement("div");
@@ -1459,6 +1495,7 @@
   function onFormChange(ev) {
     const src = ev && ev.target && ev.target.id;
     const prevDate = state.date;
+    if (src === "conv-date" || src === "conv-time") state.laterOccurrence = false;
     state.date = els.convDate.value;
     state.time = els.convTime.value;
     if (src === "meet-date") {

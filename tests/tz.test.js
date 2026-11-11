@@ -958,3 +958,91 @@ describe("calendar file and link", function () {
     assert.equal(Tz.decodeState("").duration, 60);
   });
 });
+
+describe("meeting bar ticks on DST days", function () {
+  function ticksFor(zone, date) {
+    const b = Tz.axisDayBounds(zone, date);
+    return Object.assign({ bounds: b }, Tz.axisTicks(zone, b.dayStart, b.dayEnd));
+  }
+
+  it("places 25 evenly spaced ticks on a normal day", function () {
+    const r = ticksFor("Europe/London", { year: 2026, month: 11, day: 12 });
+    assert.equal(r.hours, 24);
+    assert.equal(r.ticks.length, 25);
+    r.ticks.forEach(function (t, i) {
+      assert.equal(t.hour, i);
+      assert.ok(Math.abs(t.fraction - i / 24) < 1e-9);
+    });
+    assert.deepEqual(r.ticks.filter(function (t) { return t.label; }).map(function (t) { return t.hour; }), [0, 3, 6, 9, 12, 15, 18, 21, 24]);
+    assert.deepEqual(r.changes, []);
+  });
+
+  it("skips 02:00 on New York's 23-hour spring-forward day", function () {
+    const r = ticksFor("America/New_York", { year: 2026, month: 3, day: 8 });
+    assert.equal(r.hours, 23);
+    assert.equal(r.ticks.length, 24);
+    const hours = r.ticks.map(function (t) { return t.hour; });
+    assert.equal(hours.indexOf(2), -1);
+    assert.deepEqual(hours.slice(0, 4), [0, 1, 3, 4]);
+    const three = r.ticks[2];
+    // 03:00 EDT is two real hours after midnight.
+    assert.ok(Math.abs(three.fraction - 2 / 23) < 1e-9);
+    assert.equal(three.label, true);
+    assert.equal(r.ticks[r.ticks.length - 1].hour, 24);
+    assert.equal(r.ticks[r.ticks.length - 1].fraction, 1);
+    assert.equal(r.changes.length, 1);
+    assert.equal(r.changes[0].deltaMin, 60);
+    assert.deepEqual(r.changes[0].wallBefore, { hour: 2, minute: 0 });
+    // A pick on the 03:00 tick fills 03:00 in the converter.
+    const t = Tz.pickOnBar(r.bounds.dayStart, r.bounds.dayEnd, three.fraction, 15);
+    assert.equal(wallTime(Tz.getWallParts("America/New_York", t)), "03:00");
+  });
+
+  it("shows 01:00 twice on New York's 25-hour fall-back day", function () {
+    const r = ticksFor("America/New_York", { year: 2026, month: 11, day: 1 });
+    assert.equal(r.hours, 25);
+    assert.equal(r.ticks.length, 26);
+    const ones = r.ticks.filter(function (t) { return t.hour === 1; });
+    assert.equal(ones.length, 2);
+    assert.equal(ones[0].repeat, false);
+    assert.equal(ones[1].repeat, true);
+    assert.equal(ones[1].label, false);
+    assert.ok(Math.abs(ones[1].fraction - 2 / 25) < 1e-9);
+    const three = r.ticks.find(function (t) { return t.hour === 3; });
+    assert.ok(Math.abs(three.fraction - 4 / 25) < 1e-9);
+    assert.equal(r.changes[0].deltaMin, -60);
+    const t = Tz.pickOnBar(r.bounds.dayStart, r.bounds.dayEnd, ones[1].fraction, 15);
+    const wall = Tz.getWallParts("America/New_York", t);
+    assert.equal(wallTime(wall), "01:00");
+    assert.equal(wall.offsetLabel, "UTC-5");
+  });
+
+  it("labels the first tick when midnight itself is skipped (Santiago)", function () {
+    const r = ticksFor("America/Santiago", { year: 2026, month: 9, day: 6 });
+    assert.equal(r.hours, 23);
+    assert.equal(r.ticks[0].hour, 1);
+    assert.equal(r.ticks[0].fraction, 0);
+    assert.equal(r.ticks[0].label, true);
+    assert.equal(r.ticks[0].coarse, true);
+  });
+
+  it("handles Lord Howe's 30-minute fall-back", function () {
+    const r = ticksFor("Australia/Lord_Howe", { year: 2026, month: 4, day: 5 });
+    assert.equal(r.hours, 24.5);
+    assert.equal(r.changes[0].deltaMin, -30);
+    r.ticks.forEach(function (t) {
+      const w = Tz.getWallParts("Australia/Lord_Howe", t.instant);
+      assert.equal(w.minute, 0);
+    });
+  });
+});
+
+describe("repeated fall-back hour in the shared link", function () {
+  it("keeps the later occurrence flag", function () {
+    const enc = Tz.encodeState({ from: "America/New_York", date: "2026-11-01", time: "01:00", laterOccurrence: true });
+    assert.match(enc, /(^|&)o=2(&|$)/);
+    assert.equal(Tz.decodeState(enc).laterOccurrence, true);
+    assert.equal(Tz.decodeState("t=01:00").laterOccurrence, false);
+    assert.doesNotMatch(Tz.encodeState({ from: "America/New_York" }), /(^|&)o=/);
+  });
+});

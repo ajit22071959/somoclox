@@ -1902,6 +1902,7 @@
     if (state.workStart) p.set("ws", state.workStart);
     if (state.workEnd) p.set("we", state.workEnd);
     if (state.perCityHours) p.set("wh", "1");
+    if (state.laterOccurrence) p.set("o", "2");
     if (state.duration && Number(state.duration) !== DEFAULT_DURATION_MIN) p.set("dur", String(state.duration));
     const cityHours = state.cityHours || state.workHoursList;
     if (state.perCityHours && cityHours && cityHours.length) {
@@ -1942,6 +1943,7 @@
       workEnd: p.get("we") || "",
       perCityHours: p.get("wh") === "1",
       duration: parseDuration(p.get("dur")),
+      laterOccurrence: p.get("o") === "2",
       cityHours: (p.get("w") || "").split(",").map(function (part) {
         const m = String(part || "").trim().match(/^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
         if (!m) return null;
@@ -2302,6 +2304,64 @@
     return "https://calendar.google.com/calendar/render?" + p.join("&");
   }
 
+  // ---------------------------------------------------------------------
+  // Meeting bar hour ticks, placed by real elapsed time
+  // ---------------------------------------------------------------------
+  // One tick at every instant where the axis zone's wall clock shows :00,
+  // from dayStart to dayEnd (inclusive; the last tick is labelled 24).
+  // On a 23-hour spring-forward day the skipped hour simply has no tick;
+  // on a 25-hour fall-back day the repeated hour gets a second tick marked
+  // repeat (no label). Labels go on wall hours divisible by 3 (major) and
+  // 6 (coarse, kept on phones). Clock changes are reported in `changes`.
+  function axisTicks(axisZone, dayStart, dayEnd) {
+    const length = dayEnd - dayStart;
+    const ticks = [];
+    const changes = [];
+    if (!(length > 0)) return { ticks: ticks, changes: changes, hours: 0 };
+    const step = 15 * MINUTE;
+    const seen = {};
+    let prevOffset = getOffsetMs(axisZone, dayStart);
+    for (let t = dayStart; t <= dayEnd; t += step) {
+      const offset = getOffsetMs(axisZone, t);
+      if (offset !== prevOffset) {
+        // Find the exact minute of the change inside this step.
+        let lo = t - step;
+        let hi = t;
+        while (hi - lo > MINUTE) {
+          const mid = lo + Math.floor((hi - lo) / 2 / MINUTE) * MINUTE;
+          if (getOffsetMs(axisZone, mid) === prevOffset) lo = mid; else hi = mid;
+        }
+        const before = new Date(hi + prevOffset);
+        changes.push({
+          instant: hi,
+          fraction: (hi - dayStart) / length,
+          fromOffsetMs: prevOffset,
+          toOffsetMs: offset,
+          deltaMin: Math.round((offset - prevOffset) / MINUTE),
+          wallBefore: { hour: before.getUTCHours(), minute: before.getUTCMinutes() },
+        });
+        prevOffset = offset;
+      }
+      const local = new Date(t + offset);
+      if (local.getUTCMinutes() !== 0) continue;
+      const isEnd = t === dayEnd;
+      const hour = isEnd ? 24 : local.getUTCHours();
+      const repeat = !!seen[hour];
+      seen[hour] = true;
+      const first = ticks.length === 0;
+      ticks.push({
+        instant: t,
+        fraction: (t - dayStart) / length,
+        hour: hour,
+        repeat: repeat,
+        major: hour % 3 === 0,
+        label: first || (!repeat && hour % 3 === 0),
+        coarse: first || (!repeat && hour % 6 === 0),
+      });
+    }
+    return { ticks: ticks, changes: changes, hours: length / HOUR };
+  }
+
   return {
     DEFAULT_CITIES: DEFAULT_CITIES,
     MINUTE: MINUTE,
@@ -2375,5 +2435,6 @@
     icsFold: icsFold,
     buildIcs: buildIcs,
     googleCalendarUrl: googleCalendarUrl,
+    axisTicks: axisTicks,
   };
 });
