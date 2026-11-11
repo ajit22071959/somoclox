@@ -494,17 +494,101 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
+    .meet-grid.per-city-on { grid-template-columns: minmax(0, 240px); }
+    .hours-toggle {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: #dbe7d6;
+      cursor: pointer;
+      width: fit-content;
+      max-width: 100%;
+    }
+    .hours-toggle input {
+      margin-top: 2px;
+      accent-color: #b0d6af;
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+    .hours-rows {
+      display: grid;
+      gap: 10px;
+      margin: 0 0 16px;
+    }
+    .hours-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+      align-items: end;
+    }
+    .hours-row .city-label {
+      font-size: 13px;
+      font-weight: 650;
+      color: #e9f0e4;
+      overflow-wrap: break-word;
+      padding-bottom: 10px;
+    }
+    .meet-cities {
+      font-size: 13px;
+      color: #dbe7d6;
+      margin: 0 0 10px;
+      overflow-wrap: break-word;
+    }
+    .meet-cities strong { color: #e9f0e4; }
     .bar-wrap { margin-top: 8px; }
     .bar-label {
       display: flex;
       justify-content: space-between;
       font-size: 11px;
       color: var(--muted);
-      margin-bottom: 6px;
+      margin: 0 0 6px;
+      padding-left: 96px;
       font-variant-numeric: tabular-nums;
     }
+    .lanes {
+      display: grid;
+      gap: 6px;
+    }
+    .lane {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+    }
+    .lane-name {
+      font-size: 12px;
+      font-weight: 650;
+      color: #dbe7d6;
+      text-align: right;
+      overflow-wrap: break-word;
+      word-break: normal;
+      line-height: 1.3;
+    }
+    .lane-track {
+      position: relative;
+      height: 16px;
+      background: #0f1913;
+      border: 1px solid #3b5040;
+      border-radius: 999px;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .lane.overlap .lane-track { height: 22px; }
+    .lane.overlap .lane-name { color: var(--accent); }
+    .lane-seg {
+      position: absolute;
+      top: 2px;
+      bottom: 2px;
+      background: #3d6a4a;
+      border-radius: 999px;
+    }
+    .lane.overlap .lane-seg { background: #b0d6af; }
     .bar {
       position: relative;
       height: 28px;
@@ -523,7 +607,7 @@
     .bar-caption {
       font-size: 11px;
       color: var(--muted);
-      margin: 6px 0 0;
+      margin: 8px 0 0;
     }
     .windows { margin: 14px 0 0; display: grid; gap: 10px; }
     .window-card {
@@ -552,6 +636,7 @@
       overflow-wrap: anywhere;
     }
     .window-card .city { font-weight: 650; min-width: 0; }
+    .window-card .overlap-line { margin: 0; font-size: 13px; color: #dbe7d6; overflow-wrap: break-word; line-height: 1.45; }
 
     .copy-status {
       font-size: 12px;
@@ -581,6 +666,7 @@
     @media (max-width: 900px) {
       .clock-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .form-grid, .meet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .meet-grid.per-city-on { grid-template-columns: minmax(0, 240px); }
     }
     @media (max-width: 800px) {
       .shell { padding: 24px 16px 20px; }
@@ -590,7 +676,12 @@
       .brand small { display: none; }
       .brand { font-size: 28px; gap: 12px; }
       .brandmark { width: 60px; height: 60px; border-radius: 14px; }
-      .clock-grid, .form-grid, .meet-grid { grid-template-columns: 1fr; }
+      .clock-grid, .form-grid, .meet-grid, .meet-grid.per-city-on { grid-template-columns: 1fr; }
+      .hours-row { grid-template-columns: 1fr 1fr; }
+      .hours-row .city-label { grid-column: 1 / -1; padding-bottom: 0; }
+      .bar-label { padding-left: 0; }
+      .lane { grid-template-columns: 1fr; gap: 3px; }
+      .lane-name { text-align: left; }
       .you-time { letter-spacing: -2px; }
       .primary, .actions .secondary, .ghost { width: 100%; }
       .actions { flex-direction: column; align-items: stretch; }
@@ -664,24 +755,30 @@
 
     <section class="panel" aria-labelledby="meet-heading">
       <h2 id="meet-heading">Find a meeting time</h2>
-      <p class="lead">For the cities you are comparing, plus your own timezone, we look for hours on this date when everyone is inside the same working-hours window.</p>
-      <div class="meet-grid">
+      <p class="lead">For the From timezone and each To timezone in the converter above, we look for hours on this date when everyone is inside their working hours.</p>
+      <div class="meet-grid" id="meet-shared-hours">
         <div class="field">
           <label for="meet-date">Date</label>
           <input id="meet-date" type="date" required>
         </div>
-        <div class="field">
+        <div class="field" id="shared-start-field">
           <label for="work-start">Working hours start</label>
           <input id="work-start" type="time" step="60" value="09:00">
         </div>
-        <div class="field">
+        <div class="field" id="shared-end-field">
           <label for="work-end">Working hours end</label>
           <input id="work-end" type="time" step="60" value="18:00">
         </div>
       </div>
-      <div class="bar-wrap">
+      <label class="hours-toggle">
+        <input id="per-city-hours" type="checkbox">
+        <span>Different working hours for each city</span>
+      </label>
+      <div class="hours-rows" id="per-city-rows" hidden></div>
+      <p class="meet-cities" id="meet-cities"></p>
+      <div class="bar-wrap" id="meet-bar-wrap">
         <div class="bar-label" id="bar-label"></div>
-        <div class="bar" id="meet-bar" role="img" aria-label="Overlap of working hours"></div>
+        <div class="lanes" id="meet-bar" role="img" aria-label="Working hours and overlap"></div>
         <p class="bar-caption" id="bar-caption"></p>
       </div>
       <div class="windows" id="meet-windows" aria-live="polite"></div>

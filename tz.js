@@ -646,40 +646,200 @@
     return out;
   }
 
-  function findMeetingOverlap(options) {
-    const zones = options.zones;
-    const date = options.date;
+  function defaultWorkMinutes(options) {
     const startMin = options.workStartMin != null ? options.workStartMin : parseHm(options.workStart || "09:00");
     const endMin = options.workEndMin != null ? options.workEndMin : parseHm(options.workEnd || "18:00");
-    if (!zones || zones.length === 0) {
-      return { intervals: [], none: true, formatted: [], workStartMin: startMin, workEndMin: endMin };
-    }
-    let current = null;
+    return { startMin: startMin, endMin: endMin };
+  }
+
+  function meetingParticipants(options) {
+    const defaults = defaultWorkMinutes(options);
+    const hours = options.hours || [];
+    const zones = options.zones || [];
+    const out = [];
     for (let i = 0; i < zones.length; i++) {
-      const iv = workIntervalOnDate(zones[i], date.year, date.month, date.day, startMin, endMin);
-      current = current == null ? iv : intersectIntervals(current, iv);
+      const item = zones[i];
+      const isObj = item && typeof item === "object";
+      const timeZone = isObj ? (item.timeZone || item.tz) : item;
+      if (!timeZone) continue;
+      const row = hours[i] || {};
+      const startSrc = row.workStart || row.start || (isObj && (item.workStart || item.start)) || null;
+      const endSrc = row.workEnd || row.end || (isObj && (item.workEnd || item.end)) || null;
+      out.push({
+        timeZone: timeZone,
+        label: (isObj && item.label) || shortName(timeZone),
+        startMin: startSrc != null && startSrc !== "" ? parseHm(startSrc) : defaults.startMin,
+        endMin: endSrc != null && endSrc !== "" ? parseHm(endSrc) : defaults.endMin,
+      });
     }
-    const intervals = current || [];
+    return out;
+  }
+
+  function workIntervalsAround(timeZone, date, startMin, endMin, dayRadius) {
+    const radius = dayRadius == null ? 1 : dayRadius;
+    const out = [];
+    for (let delta = -radius; delta <= radius; delta++) {
+      const d = addDays(date.year, date.month, date.day, delta);
+      const ivs = workIntervalOnDate(timeZone, d.year, d.month, d.day, startMin, endMin);
+      for (let i = 0; i < ivs.length; i++) out.push(ivs[i]);
+    }
+    return out;
+  }
+
+  function overlapsRange(iv, start, end) {
+    return iv.end > start && iv.start < end;
+  }
+
+  function clipInterval(iv, start, end) {
+    const s = Math.max(iv.start, start);
+    const e = Math.min(iv.end, end);
+    if (e <= s) return null;
+    return { start: s, end: e };
+  }
+
+  function axisDayBounds(axisZone, date) {
+    const dayStart = resolveLocal(axisZone, {
+      year: date.year, month: date.month, day: date.day, hour: 0, minute: 0, second: 0,
+    }).instant;
+    const next = addDays(date.year, date.month, date.day, 1);
+    const dayEnd = resolveLocal(axisZone, {
+      year: next.year, month: next.month, day: next.day, hour: 0, minute: 0, second: 0,
+    }).instant;
+    return { dayStart: dayStart, dayEnd: dayEnd };
+  }
+
+  function comboGap(intervals) {
+    let start = intervals[0].start;
+    let end = intervals[0].end;
+    for (let i = 1; i < intervals.length; i++) {
+      if (intervals[i].start > start) start = intervals[i].start;
+      if (intervals[i].end < end) end = intervals[i].end;
+    }
+    return { start: start, end: end, gapMin: Math.round((start - end) / MINUTE) };
+  }
+
+  function eachCombo(lists, choose) {
+    const chosen = [];
+    function walk(i) {
+      if (i === lists.length) {
+        choose(chosen.slice());
+        return;
+      }
+      const list = lists[i];
+      if (!list.length) return;
+      for (let j = 0; j < list.length; j++) {
+        chosen[i] = list[j];
+        walk(i + 1);
+      }
+    }
+    walk(0);
+  }
+
+  function findNearMiss(lanes, dayStart, dayEnd) {
+    if (!lanes || lanes.length < 2) return null;
+    const lists = lanes.map(function (lane) { return lane.intervals || []; });
+    let best = null;
+    eachCombo(lists, function (combo) {
+      const gap = comboGap(combo);
+      if (gap.gapMin <= 0) return;
+      const regionStart = Math.min.apply(null, combo.map(function (iv) { return iv.start; }));
+      const regionEnd = Math.max.apply(null, combo.map(function (iv) { return iv.end; }));
+      if (regionEnd <= dayStart - DAY || regionStart >= dayEnd + DAY) return;
+      const mid = (Math.max(gap.end, dayStart) + Math.min(gap.start, dayEnd)) / 2;
+      const dist = Math.min(Math.abs(mid - dayStart), Math.abs(mid - dayEnd), Math.abs(mid - (dayStart + dayEnd) / 2));
+      if (!best || gap.gapMin < best.gapMin || (gap.gapMin === best.gapMin && dist < best.dist)) {
+        best = {
+          gapMin: gap.gapMin,
+          dist: dist,
+          combo: combo,
+          gapStart: gap.end,
+          gapEnd: gap.start,
+        };
+      }
+    });
+    if (!best) return null;
+    const windows = lanes.map(function (lane, i) {
+      const iv = best.combo[i];
+      return {
+        timeZone: lane.timeZone,
+        label: lane.label,
+        start: getWallParts(lane.timeZone, iv.start),
+        end: getWallParts(lane.timeZone, iv.end),
+        interval: iv,
+      };
+    });
+    const names = windows.map(function (w) {
+      return w.label + " " + pad2(w.start.hour) + ":" + pad2(w.start.minute) +
+        "–" + pad2(w.end.hour) + ":" + pad2(w.end.minute);
+    });
+    return {
+      gapMin: best.gapMin,
+      windows: windows,
+      text: "The closest working windows are " + formatDuration(best.gapMin) + " apart: " +
+        names.join(" and ") + ".",
+    };
+  }
+
+  function findMeetingOverlap(options) {
+    const defaults = defaultWorkMinutes(options);
+    const participants = meetingParticipants(options);
+    if (!participants.length) {
+      return {
+        intervals: [],
+        none: true,
+        formatted: [],
+        lanes: [],
+        nearMiss: null,
+        workStartMin: defaults.startMin,
+        workEndMin: defaults.endMin,
+      };
+    }
+    const date = options.date;
+    const axisZone = options.axisZone || participants[0].timeZone;
+    const bounds = axisDayBounds(axisZone, date);
+    const lanes = participants.map(function (p) {
+      return {
+        timeZone: p.timeZone,
+        label: p.label,
+        startMin: p.startMin,
+        endMin: p.endMin,
+        intervals: workIntervalsAround(p.timeZone, date, p.startMin, p.endMin, 1),
+      };
+    });
+    let current = null;
+    for (let i = 0; i < lanes.length; i++) {
+      current = current == null ? lanes[i].intervals.slice() : intersectIntervals(current, lanes[i].intervals);
+    }
+    const intervals = (current || []).map(function (iv) {
+      return clipInterval(iv, bounds.dayStart, bounds.dayEnd);
+    }).filter(Boolean);
     const formatted = intervals.map(function (iv) {
       return {
         start: iv.start,
         end: iv.end,
         durationMin: Math.round((iv.end - iv.start) / MINUTE),
-        inZones: zones.map(function (z) {
+        inZones: participants.map(function (p) {
           return {
-            timeZone: z,
-            start: getWallParts(z, iv.start),
-            end: getWallParts(z, iv.end),
+            timeZone: p.timeZone,
+            label: p.label,
+            start: getWallParts(p.timeZone, iv.start),
+            end: getWallParts(p.timeZone, iv.end),
           };
         }),
       };
     });
+    const nearMiss = intervals.length ? null : findNearMiss(lanes, bounds.dayStart, bounds.dayEnd);
     return {
       intervals: intervals,
       none: intervals.length === 0,
       formatted: formatted,
-      workStartMin: startMin,
-      workEndMin: endMin,
+      lanes: lanes,
+      axisZone: axisZone,
+      dayStart: bounds.dayStart,
+      dayEnd: bounds.dayEnd,
+      nearMiss: nearMiss,
+      workStartMin: defaults.startMin,
+      workEndMin: defaults.endMin,
     };
   }
 
@@ -1731,6 +1891,15 @@
     p.set("h", state.hour12 ? "12" : "24");
     if (state.workStart) p.set("ws", state.workStart);
     if (state.workEnd) p.set("we", state.workEnd);
+    if (state.perCityHours) p.set("wh", "1");
+    const cityHours = state.cityHours || state.workHoursList;
+    if (state.perCityHours && cityHours && cityHours.length) {
+      p.set("w", cityHours.map(function (h) {
+        const start = (h && (h.start || h.workStart)) || state.workStart || "09:00";
+        const end = (h && (h.end || h.workEnd)) || state.workEnd || "18:00";
+        return start + "-" + end;
+      }).join(","));
+    }
     return p.toString();
   }
 
@@ -1760,6 +1929,12 @@
       hour12: hour === "12",
       workStart: p.get("ws") || "",
       workEnd: p.get("we") || "",
+      perCityHours: p.get("wh") === "1",
+      cityHours: (p.get("w") || "").split(",").map(function (part) {
+        const m = String(part || "").trim().match(/^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
+        if (!m) return null;
+        return { start: m[1].length === 4 ? "0" + m[1] : m[1], end: m[2].length === 4 ? "0" + m[2] : m[2] };
+      }).filter(Boolean),
     };
   }
 
@@ -1857,6 +2032,9 @@
     dstWarnings: dstWarnings,
     parseHm: parseHm,
     findMeetingOverlap: findMeetingOverlap,
+    workIntervalOnDate: workIntervalOnDate,
+    axisDayBounds: axisDayBounds,
+    clipInterval: clipInterval,
     listTimeZones: listTimeZones,
     resolveZone: resolveZone,
     sameZone: sameZone,

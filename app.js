@@ -27,7 +27,14 @@
     meetDate: document.getElementById("meet-date"),
     workStart: document.getElementById("work-start"),
     workEnd: document.getElementById("work-end"),
+    perCityHours: document.getElementById("per-city-hours"),
+    perCityRows: document.getElementById("per-city-rows"),
+    meetCities: document.getElementById("meet-cities"),
+    meetGrid: document.getElementById("meet-shared-hours"),
+    sharedStartField: document.getElementById("shared-start-field"),
+    sharedEndField: document.getElementById("shared-end-field"),
     meetBar: document.getElementById("meet-bar"),
+    meetBarWrap: document.getElementById("meet-bar-wrap"),
     barLabel: document.getElementById("bar-label"),
     barCaption: document.getElementById("bar-caption"),
     meetWindows: document.getElementById("meet-windows"),
@@ -53,6 +60,9 @@
     meetingDate: "",
     workStart: "09:00",
     workEnd: "18:00",
+    perCityHours: false,
+    workHours: {},
+    meetDateManual: false,
   };
 
   function isKnownZone(tz) {
@@ -127,6 +137,49 @@
     return Tz.shortName(tz);
   }
 
+  function meetingPeople() {
+    const from = asEntry({ tz: state.from, label: state.fromLabel || Tz.shortName(state.from) });
+    const list = [];
+    if (from) list.push(from);
+    (state.to || []).forEach(function (entry) { list.push(entry); });
+    return list;
+  }
+
+  function hoursKey(entry) {
+    return entry.tz + "\t" + entryLabel(entry);
+  }
+
+  function hoursFor(entry) {
+    if (state.perCityHours) {
+      const saved = state.workHours[hoursKey(entry)];
+      if (saved && saved.start && saved.end) return { start: saved.start, end: saved.end };
+    }
+    return { start: state.workStart || "09:00", end: state.workEnd || "18:00" };
+  }
+
+  function ensureHours(entry) {
+    const key = hoursKey(entry);
+    if (!state.workHours[key]) {
+      state.workHours[key] = { start: state.workStart || "09:00", end: state.workEnd || "18:00" };
+    }
+    return state.workHours[key];
+  }
+
+  function cityHoursList() {
+    return meetingPeople().map(function (entry) { return hoursFor(entry); });
+  }
+
+  function applyCityHoursList(list) {
+    if (!list || !list.length) return;
+    const people = meetingPeople();
+    for (let i = 0; i < people.length && i < list.length; i++) {
+      state.workHours[hoursKey(people[i])] = {
+        start: list[i].start || state.workStart,
+        end: list[i].end || state.workEnd,
+      };
+    }
+  }
+
   function gapLabel(gap, fromLabel, toLabel) {
     const minutes = gap && typeof gap.minutes === "number" ? gap.minutes : 0;
     if (minutes === 0) return toLabel + " is the same time as " + fromLabel;
@@ -152,6 +205,8 @@
         hour12: state.hour12,
         workStart: state.workStart,
         workEnd: state.workEnd,
+        perCityHours: state.perCityHours,
+        workHours: state.workHours,
       }));
     } catch (err) {
       // Storage may be blocked; the page still works for this visit.
@@ -183,6 +238,8 @@
       if (typeof stored.hour12 === "boolean") state.hour12 = stored.hour12;
       if (stored.workStart) state.workStart = stored.workStart;
       if (stored.workEnd) state.workEnd = stored.workEnd;
+      if (typeof stored.perCityHours === "boolean") state.perCityHours = stored.perCityHours;
+      if (stored.workHours && typeof stored.workHours === "object") state.workHours = stored.workHours;
     }
 
     const hash = Tz.decodeState(location.hash || location.search);
@@ -218,6 +275,14 @@
       }
       if (hash.workStart) state.workStart = hash.workStart;
       if (hash.workEnd) state.workEnd = hash.workEnd;
+      if (location.hash.indexOf("wh=") !== -1 || location.search.indexOf("wh=") !== -1) {
+        state.perCityHours = hash.perCityHours;
+      }
+      if (hash.meetingDate && hash.date && hash.meetingDate !== hash.date) {
+        state.meetDateManual = true;
+      } else {
+        state.meetDateManual = false;
+      }
     }
 
     state.zones = uniqueEntries(state.zones);
@@ -227,6 +292,10 @@
     if (!state.date) state.date = todayInZone(userZone);
     if (!state.time) state.time = currentTimeInZone(state.from);
     if (!state.meetingDate) state.meetingDate = state.date;
+    if (!state.meetDateManual) state.meetingDate = state.date;
+    if (hasHash && hash.cityHours && hash.cityHours.length) {
+      applyCityHoursList(hash.cityHours);
+    }
   }
 
   function currentShareState() {
@@ -243,6 +312,8 @@
       hour12: state.hour12,
       workStart: state.workStart,
       workEnd: state.workEnd,
+      perCityHours: state.perCityHours,
+      cityHours: state.perCityHours ? cityHoursList() : [],
     };
   }
 
@@ -520,7 +591,7 @@
 
     function pick(row) {
       onPick(row.timeZone, row);
-      if (opts.keepValue) input.value = row.title || row.name;
+      if (opts.keepValue) input.value = row.displayLabel || row.title || row.name;
       else input.value = "";
       close();
     }
@@ -571,11 +642,12 @@
       btn.setAttribute("aria-label", "Remove " + entryLabel(entry));
       btn.textContent = "×";
       btn.addEventListener("click", function () {
-        if (state.to.length === 1) return;
         state.to = state.to.filter(function (z) { return !sameEntry(z, entry); });
         syncHash();
         renderTargets();
         renderConverter();
+        renderPerCityRows();
+        renderMeeting();
       });
       chip.appendChild(btn);
       els.toTargets.appendChild(chip);
@@ -589,6 +661,8 @@
     syncHash();
     renderTargets();
     renderConverter();
+    renderPerCityRows();
+    renderMeeting();
   }
 
   function fillForm() {
@@ -599,7 +673,9 @@
     els.meetDate.value = state.meetingDate;
     els.workStart.value = state.workStart;
     els.workEnd.value = state.workEnd;
+    els.perCityHours.checked = !!state.perCityHours;
     renderTargets();
+    renderPerCityRows();
   }
 
   function partsFromForm() {
@@ -702,86 +778,189 @@
     return { year: dt.getUTCFullYear(), month: dt.getUTCMonth() + 1, day: dt.getUTCDate() };
   }
 
+  function renderPerCityRows() {
+    const people = meetingPeople();
+    const on = !!state.perCityHours;
+    els.perCityHours.checked = on;
+    els.perCityRows.hidden = !on;
+    if (els.sharedStartField) els.sharedStartField.hidden = on;
+    if (els.sharedEndField) els.sharedEndField.hidden = on;
+    if (els.meetGrid) {
+      if (on) els.meetGrid.classList.add("per-city-on");
+      else els.meetGrid.classList.remove("per-city-on");
+    }
+    els.perCityRows.innerHTML = "";
+    if (!on) return;
+    people.forEach(function (entry, index) {
+      const hours = ensureHours(entry);
+      const row = document.createElement("div");
+      row.className = "hours-row";
+      const name = document.createElement("div");
+      name.className = "city-label";
+      name.textContent = entryLabel(entry);
+      function field(idPrefix, labelText, value, key) {
+        const wrap = document.createElement("div");
+        wrap.className = "field";
+        const lab = document.createElement("label");
+        const id = idPrefix + "-" + index;
+        lab.setAttribute("for", id);
+        lab.textContent = labelText;
+        const input = document.createElement("input");
+        input.id = id;
+        input.type = "time";
+        input.step = "60";
+        input.value = value;
+        input.addEventListener("change", function () { onCityHoursChange(entry, key, input.value); });
+        input.addEventListener("input", function () { onCityHoursChange(entry, key, input.value); });
+        wrap.appendChild(lab);
+        wrap.appendChild(input);
+        return wrap;
+      }
+      row.appendChild(name);
+      row.appendChild(field("city-start", "Start", hours.start, "start"));
+      row.appendChild(field("city-end", "End", hours.end, "end"));
+      els.perCityRows.appendChild(row);
+    });
+  }
+
+  function onCityHoursChange(entry, key, value) {
+    const hours = ensureHours(entry);
+    hours[key] = value || (key === "start" ? "09:00" : "18:00");
+    state.workHours[hoursKey(entry)] = hours;
+    writeStore();
+    syncHash();
+    renderMeeting();
+  }
+
+  function setPerCityHours(on) {
+    state.perCityHours = !!on;
+    if (state.perCityHours) {
+      meetingPeople().forEach(function (entry) { ensureHours(entry); });
+    }
+    writeStore();
+    syncHash();
+    renderPerCityRows();
+    renderMeeting();
+  }
+
+  function formatWindowRange(startWall, endWall) {
+    let text = Tz.formatTimeShort(startWall, state.hour12) + "–" + Tz.formatTimeShort(endWall, state.hour12);
+    const diff = Tz.calendarDiffDays(startWall, endWall);
+    if (diff > 0) text += " next day";
+    else if (diff < 0) text += " previous day";
+    return text;
+  }
+
   function renderMeeting() {
     const date = Tz.parseIsoDate(state.meetingDate);
-    const zones = unique([userZone].concat(state.zones));
+    const people = meetingPeople();
     els.meetBar.innerHTML = "";
     els.meetWindows.innerHTML = "";
     els.barLabel.innerHTML = "";
     els.barCaption.textContent = "";
-    if (!date) return;
+    els.meetCities.textContent = "";
+    if (els.meetBarWrap) els.meetBarWrap.hidden = false;
 
-    const startLabel = dummyWall(0, 0);
-    const midLabel = dummyWall(12, 0);
-    const endLabel = dummyWall(0, 0);
-    els.barLabel.innerHTML =
-      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 0, minute: 0 }, state.hour12)) + "</span>" +
-      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 12, minute: 0 }, state.hour12)) + "</span>" +
-      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 0, minute: 0 }, state.hour12)) + "</span>";
-    void startLabel; void midLabel; void endLabel;
+    if (!state.to.length) {
+      if (els.meetBarWrap) els.meetBarWrap.hidden = true;
+      const prompt = document.createElement("div");
+      prompt.className = "notice";
+      prompt.textContent = "Add a To timezone above to find a shared time.";
+      els.meetWindows.appendChild(prompt);
+      return;
+    }
+    if (!date || !state.from) return;
 
-    const dayStart = Tz.resolveLocal(userZone, {
-      year: date.year, month: date.month, day: date.day, hour: 0, minute: 0, second: 0,
-    }).instant;
-    const next = addDays(date.year, date.month, date.day, 1);
-    const dayEnd = Tz.resolveLocal(userZone, {
-      year: next.year, month: next.month, day: next.day, hour: 0, minute: 0, second: 0,
-    }).instant;
-    const length = dayEnd - dayStart;
+    const fromLabel = state.fromLabel || Tz.shortName(state.from);
+    els.meetCities.innerHTML = "Checking <strong>" + people.map(function (e) {
+      return escapeHtml(entryLabel(e));
+    }).join("</strong>, <strong>") + "</strong>";
 
-    let overlap;
-    try {
-      overlap = Tz.findMeetingOverlap({
-        zones: zones,
-        date: date,
-        workStart: state.workStart,
-        workEnd: state.workEnd,
-      });
-    } catch (err) {
+    const overlap = (function () {
+      try {
+        return Tz.findMeetingOverlap({
+          zones: people,
+          axisZone: state.from,
+          date: date,
+          workStart: state.workStart,
+          workEnd: state.workEnd,
+          hours: people.map(function (entry) { return hoursFor(entry); }),
+        });
+      } catch (err) {
+        return null;
+      }
+    })();
+
+    if (!overlap) {
       els.barCaption.textContent = "Those working hours could not be applied to this date.";
       return;
     }
 
-    const captionPlace = Tz.countryDisplayName(Tz.countryCodeForZone(userZone)) || Tz.shortName(userZone);
-    els.barCaption.textContent = "The bar is " + Tz.formatDate(Tz.getWallParts(userZone, dayStart)) +
-      " in " + captionPlace + ".";
+    const dayStart = overlap.dayStart;
+    const dayEnd = overlap.dayEnd;
+    const length = dayEnd - dayStart;
+    els.barLabel.innerHTML =
+      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 0, minute: 0 }, state.hour12)) + "</span>" +
+      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 12, minute: 0 }, state.hour12)) + "</span>" +
+      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 0, minute: 0 }, state.hour12)) + "</span>";
+    els.barCaption.textContent = "Times shown in " + fromLabel + " time";
+
+    function addLane(name, intervals, overlapLane) {
+      const lane = document.createElement("div");
+      lane.className = "lane" + (overlapLane ? " overlap" : "");
+      const labelEl = document.createElement("div");
+      labelEl.className = "lane-name";
+      labelEl.textContent = name;
+      const track = document.createElement("div");
+      track.className = "lane-track";
+      (intervals || []).forEach(function (iv) {
+        const clipped = Tz.clipInterval(iv, dayStart, dayEnd);
+        if (!clipped || !length) return;
+        const seg = document.createElement("div");
+        seg.className = "lane-seg";
+        const left = ((clipped.start - dayStart) / length) * 100;
+        const width = ((clipped.end - clipped.start) / length) * 100;
+        seg.style.left = Math.max(0, left) + "%";
+        seg.style.width = Math.max(0.4, width) + "%";
+        track.appendChild(seg);
+      });
+      lane.appendChild(labelEl);
+      lane.appendChild(track);
+      els.meetBar.appendChild(lane);
+    }
+
+    overlap.lanes.forEach(function (lane) {
+      addLane(lane.label, lane.intervals, false);
+    });
+    addLane("Overlap", overlap.intervals, true);
 
     if (overlap.none) {
       const none = document.createElement("div");
       none.className = "notice";
-      none.textContent = "There is no overlapping working hour on this date for the selected timezones.";
+      let text = "There is no overlapping working hour on this date for " +
+        people.map(function (e) { return entryLabel(e); }).join(" and ") + ".";
+      if (overlap.nearMiss && overlap.nearMiss.text) {
+        text += " " + overlap.nearMiss.text;
+      }
+      none.textContent = text;
       els.meetWindows.appendChild(none);
       return;
     }
 
     overlap.formatted.forEach(function (win, index) {
-      const left = ((win.start - dayStart) / length) * 100;
-      const width = ((win.end - win.start) / length) * 100;
-      const seg = document.createElement("div");
-      seg.className = "bar-seg";
-      seg.style.left = Math.max(0, left) + "%";
-      seg.style.width = Math.max(0.4, width) + "%";
-      els.meetBar.appendChild(seg);
-
       const card = document.createElement("div");
       card.className = "window-card";
       const h = document.createElement("h3");
       h.textContent = (overlap.formatted.length > 1 ? "Window " + (index + 1) + " · " : "Best overlap · ") +
         formatDuration(win.durationMin);
-      const ul = document.createElement("ul");
-      win.inZones.forEach(function (z) {
-        const li = document.createElement("li");
-        const city = document.createElement("span");
-        city.className = "city";
-        city.textContent = labelForZone(z.timeZone, state.zones.concat([{ tz: userZone, label: Tz.countryDisplayName(Tz.countryCodeForZone(userZone)) || Tz.shortName(userZone) }]));
-        const time = document.createElement("span");
-        time.textContent = Tz.formatTimeShort(z.start, state.hour12) + " – " + Tz.formatTimeShort(z.end, state.hour12);
-        li.appendChild(city);
-        li.appendChild(time);
-        ul.appendChild(li);
-      });
+      const p = document.createElement("p");
+      p.className = "overlap-line";
+      p.textContent = win.inZones.map(function (z) {
+        const label = z.label || labelForZone(z.timeZone, people);
+        return label + " " + formatWindowRange(z.start, z.end);
+      }).join(" · ");
       card.appendChild(h);
-      card.appendChild(ul);
+      card.appendChild(p);
       els.meetWindows.appendChild(card);
     });
   }
@@ -822,10 +1001,24 @@
     }, 2500);
   }
 
-  function onFormChange() {
+  function onFormChange(ev) {
+    const src = ev && ev.target && ev.target.id;
+    const prevDate = state.date;
     state.date = els.convDate.value;
     state.time = els.convTime.value;
-    state.meetingDate = els.meetDate.value;
+    if (src === "meet-date") {
+      state.meetingDate = els.meetDate.value;
+      state.meetDateManual = !!(state.meetingDate && state.meetingDate !== state.date);
+    } else if (src === "conv-date") {
+      if (!state.meetDateManual || state.meetingDate === prevDate) {
+        state.meetDateManual = false;
+        state.meetingDate = state.date;
+        els.meetDate.value = state.meetingDate;
+      }
+    } else if (!state.meetDateManual) {
+      state.meetingDate = state.date;
+      if (els.meetDate.value !== state.meetingDate) els.meetDate.value = state.meetingDate;
+    }
     state.workStart = els.workStart.value || "09:00";
     state.workEnd = els.workEnd.value || "18:00";
     writeStore();
@@ -842,6 +1035,9 @@
       document.getElementById(id).addEventListener("change", onFormChange);
       document.getElementById(id).addEventListener("input", onFormChange);
     });
+    els.perCityHours.addEventListener("change", function () {
+      setPerCityHours(els.perCityHours.checked);
+    });
 
     bindCombo(document.getElementById("zone-search"), document.getElementById("zone-list"), function (tz, row) {
       addZone(tz, row && row.displayLabel);
@@ -854,6 +1050,8 @@
       document.getElementById("conv-from").value = entry.label;
       syncHash();
       renderConverter();
+      renderPerCityRows();
+      renderMeeting();
     }, { keepValue: true });
     bindCombo(document.getElementById("conv-to"), document.getElementById("to-list"), function (tz, row) {
       addTarget(tz, row && row.displayLabel);

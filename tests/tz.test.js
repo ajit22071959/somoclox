@@ -258,6 +258,97 @@ describe("meeting overlap", function () {
     assert.equal(wallTime(london.start), "09:00");
     assert.equal(wallTime(london.end), "17:00");
   });
+
+  it("finds an 8-hour Paris/London overlap at the default 09:00–18:00 hours", function () {
+    const overlap = Tz.findMeetingOverlap({
+      zones: [
+        { timeZone: "Europe/Paris", label: "Paris" },
+        { timeZone: "Europe/London", label: "London" },
+      ],
+      axisZone: "Europe/Paris",
+      date: { year: 2026, month: 11, day: 12 },
+      workStart: "09:00",
+      workEnd: "18:00",
+    });
+    assert.equal(overlap.none, false);
+    assert.equal(overlap.formatted.length, 1);
+    assert.equal(overlap.formatted[0].durationMin, 8 * 60);
+    const paris = overlap.formatted[0].inZones.find(function (z) { return z.label === "Paris"; });
+    const london = overlap.formatted[0].inZones.find(function (z) { return z.label === "London"; });
+    assert.equal(wallTime(paris.start), "10:00");
+    assert.equal(wallTime(paris.end), "18:00");
+    assert.equal(wallTime(london.start), "09:00");
+    assert.equal(wallTime(london.end), "17:00");
+  });
+
+  it("respects per-city working hours", function () {
+    const overlap = Tz.findMeetingOverlap({
+      zones: [
+        { timeZone: "Europe/Paris", label: "Paris", workStart: "09:00", workEnd: "18:00" },
+        { timeZone: "Europe/London", label: "London", workStart: "08:00", workEnd: "16:00" },
+      ],
+      axisZone: "Europe/Paris",
+      date: { year: 2026, month: 11, day: 12 },
+    });
+    assert.equal(overlap.none, false);
+    assert.equal(overlap.formatted[0].durationMin, 8 * 60);
+    const paris = overlap.formatted[0].inZones.find(function (z) { return z.label === "Paris"; });
+    const london = overlap.formatted[0].inZones.find(function (z) { return z.label === "London"; });
+    assert.equal(wallTime(paris.start), "09:00");
+    assert.equal(wallTime(paris.end), "17:00");
+    assert.equal(wallTime(london.start), "08:00");
+    assert.equal(wallTime(london.end), "16:00");
+  });
+
+  it("handles working hours that cross midnight", function () {
+    const overlap = Tz.findMeetingOverlap({
+      zones: [
+        { timeZone: "Europe/Paris", label: "Paris", workStart: "22:00", workEnd: "06:00" },
+        { timeZone: "Europe/London", label: "London", workStart: "21:00", workEnd: "05:00" },
+      ],
+      axisZone: "Europe/Paris",
+      date: { year: 2026, month: 11, day: 12 },
+      workStart: "22:00",
+      workEnd: "06:00",
+    });
+    assert.equal(overlap.none, false);
+    assert.ok(overlap.formatted.length >= 1);
+    const total = overlap.formatted.reduce(function (sum, w) { return sum + w.durationMin; }, 0);
+    // The shared night shift is 8 hours; clipped to the Paris date it appears
+    // as the morning remainder plus the evening start (6h + 2h).
+    assert.equal(total, 8 * 60);
+    const morning = overlap.formatted.find(function (w) {
+      const paris = w.inZones.find(function (z) { return z.label === "Paris"; });
+      return paris && paris.start.hour === 0 && paris.start.minute === 0;
+    });
+    const evening = overlap.formatted.find(function (w) {
+      const paris = w.inZones.find(function (z) { return z.label === "Paris"; });
+      return paris && paris.start.hour === 22;
+    });
+    assert.ok(morning, "expected a morning remainder of the overnight window");
+    assert.ok(evening, "expected the overnight window to start in the evening");
+    assert.equal(morning.durationMin, 6 * 60);
+    assert.equal(evening.durationMin, 2 * 60);
+  });
+
+  it("suggests the closest near-miss when Tokyo and New York have no overlap", function () {
+    const overlap = Tz.findMeetingOverlap({
+      zones: [
+        { timeZone: "Asia/Tokyo", label: "Tokyo" },
+        { timeZone: "America/New_York", label: "New York" },
+      ],
+      axisZone: "Asia/Tokyo",
+      date: { year: 2026, month: 6, day: 15 },
+      workStart: "09:00",
+      workEnd: "18:00",
+    });
+    assert.equal(overlap.none, true);
+    assert.ok(overlap.nearMiss);
+    // New York's 09:00–18:00 ends at 07:00 the next morning in Tokyo, 2 hours
+    // before Tokyo's 09:00 start — closer than the 4-hour same-calendar-day gap.
+    assert.equal(overlap.nearMiss.gapMin, 2 * 60);
+    assert.match(overlap.nearMiss.text, /2h apart/i);
+  });
 });
 
 describe("URL state encode/decode", function () {
@@ -293,6 +384,33 @@ describe("URL state encode/decode", function () {
 
     const twentyFour = Tz.decodeState(Tz.encodeState(Object.assign({}, state, { hour12: false })));
     assert.equal(twentyFour.hour12, false);
+  });
+
+  it("round-trips per-city working hours and the per-city toggle", function () {
+    const state = {
+      from: "Europe/Paris",
+      fromLabel: "Paris",
+      to: [{ tz: "Europe/London", label: "London" }],
+      date: "2026-11-12",
+      time: "08:30",
+      meetingDate: "2026-11-12",
+      hour12: false,
+      workStart: "09:00",
+      workEnd: "18:00",
+      perCityHours: true,
+      cityHours: [
+        { start: "09:00", end: "18:00" },
+        { start: "08:00", end: "16:00" },
+      ],
+    };
+    const encoded = Tz.encodeState(state);
+    const decoded = Tz.decodeState(encoded);
+    assert.equal(decoded.perCityHours, true);
+    assert.deepEqual(decoded.cityHours, state.cityHours);
+    assert.equal(decoded.date, "2026-11-12");
+    assert.equal(decoded.workStart, "09:00");
+    assert.match(encoded, /(?:^|&)wh=1(?:&|$)/);
+    assert.match(encoded, /w=09%3A00-18%3A00%2C08%3A00-16%3A00|w=09:00-18:00,08:00-16:00/);
   });
 });
 
