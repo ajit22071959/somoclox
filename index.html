@@ -662,21 +662,6 @@
       <div class="results" id="conv-results" aria-live="polite"></div>
     </section>
 
-    <section class="panel" aria-labelledby="compare-heading">
-      <h2 id="compare-heading">Compare cities</h2>
-      <p class="lead">Add any timezone to the grid. Star a city to keep it in your favourites on this device.</p>
-      <div class="add-row">
-        <label for="zone-search">Add a timezone</label>
-        <div class="combo" data-combo="add">
-          <input id="zone-search" type="search" autocomplete="off" placeholder="Type a city or zone, for example London or Tokyo" aria-autocomplete="list" aria-controls="zone-list" aria-expanded="false">
-          <ul class="combo-list" id="zone-list" role="listbox" hidden></ul>
-        </div>
-      </div>
-      <div class="favs" id="favs"></div>
-      <div class="clock-grid" id="clock-grid"></div>
-      <div class="dst-notes" id="dst-notes"></div>
-    </section>
-
     <section class="panel" aria-labelledby="meet-heading">
       <h2 id="meet-heading">Find a meeting time</h2>
       <p class="lead">For the cities you are comparing, plus your own timezone, we look for hours on this date when everyone is inside the same working-hours window.</p>
@@ -700,6 +685,21 @@
         <p class="bar-caption" id="bar-caption"></p>
       </div>
       <div class="windows" id="meet-windows" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="compare-heading">
+      <h2 id="compare-heading">Compare cities</h2>
+      <p class="lead">Add any timezone to the grid. Star a city to keep it in your favourites on this device.</p>
+      <div class="add-row">
+        <label for="zone-search">Add a timezone</label>
+        <div class="combo" data-combo="add">
+          <input id="zone-search" type="search" autocomplete="off" placeholder="Type a city or zone, for example London or Tokyo" aria-autocomplete="list" aria-controls="zone-list" aria-expanded="false">
+          <ul class="combo-list" id="zone-list" role="listbox" hidden></ul>
+        </div>
+      </div>
+      <div class="favs" id="favs"></div>
+      <div class="clock-grid" id="clock-grid"></div>
+      <div class="dst-notes" id="dst-notes"></div>
     </section>
 
     <footer>Times use this browser's built-in timezone data. No data leaves the device.</footer>
