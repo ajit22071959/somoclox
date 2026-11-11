@@ -3,6 +3,7 @@
   "private": true,
   "description": "See the time in several timezones, convert a time from one to another, and find a meeting hour that works for everyone.",
   "scripts": {
-    "test": "node --test tests/tz.test.js"
+    "test": "node --test tests/tz.test.js",
+    "build:zones": "node scripts/build-zone-countries.js"
   }
 }

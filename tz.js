@@ -17,6 +17,18 @@
   const HOUR = 3600000;
   const DAY = 86400000;
 
+  const ZONE_COUNTRIES = (function loadZoneCountries() {
+    if (typeof require === "function") {
+      try {
+        return require("./zone-countries.js");
+      } catch (err) {
+        // fall through to a global, for the browser
+      }
+    }
+    const root = typeof globalThis !== "undefined" ? globalThis : {};
+    return root.SomocloxZoneCountries || {};
+  })();
+
   const DEFAULT_CITIES = [
     { timeZone: "America/New_York", label: "New York" },
     { timeZone: "America/Los_Angeles", label: "Los Angeles" },
@@ -834,6 +846,78 @@
     };
   }
 
+
+  function countryCodeForZone(timeZone) {
+    if (!timeZone) return null;
+    if (ZONE_COUNTRIES[timeZone]) return ZONE_COUNTRIES[timeZone];
+    try {
+      const preferred = preferredZone(timeZone);
+      if (ZONE_COUNTRIES[preferred]) return ZONE_COUNTRIES[preferred];
+      const resolved = resolveZone(timeZone);
+      if (ZONE_COUNTRIES[resolved]) return ZONE_COUNTRIES[resolved];
+    } catch (err) {
+      // unknown zone
+    }
+    return null;
+  }
+
+  function countryDisplayName(code) {
+    if (!code) return "";
+    try {
+      if (typeof Intl.DisplayNames === "function") {
+        const names = new Intl.DisplayNames(["en"], { type: "region" });
+        const label = names.of(code);
+        if (label) return label;
+      }
+    } catch (err) {
+      // fall back to the code
+    }
+    return code;
+  }
+
+  function isOffsetStyleName(name) {
+    if (!name) return true;
+    return /^(GMT|UTC)([+-].*)?$/i.test(String(name).trim());
+  }
+
+  function timeZoneLongName(timeZone, instant) {
+    const ms = instant == null ? Date.now() : toMs(instant);
+    const date = new Date(ms);
+    let name = "";
+    try {
+      const parts = new Intl.DateTimeFormat("en", {
+        timeZone: timeZone,
+        timeZoneName: "long",
+        hour: "numeric",
+      }).formatToParts(date);
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].type === "timeZoneName") {
+          name = parts[i].value;
+          break;
+        }
+      }
+    } catch (err) {
+      name = "";
+    }
+    if (!isOffsetStyleName(name)) return name;
+    try {
+      return formatOffsetLabel(getOffsetMs(timeZone, date));
+    } catch (err) {
+      return name || "";
+    }
+  }
+
+  function placeLabel(timeZone, instant) {
+    if (!timeZone) return "";
+    const tzName = timeZoneLongName(timeZone, instant);
+    const code = countryCodeForZone(timeZone);
+    const country = code ? countryDisplayName(code) : "";
+    if (country && tzName) return country + " · " + tzName;
+    if (tzName) return tzName;
+    if (country) return country;
+    return String(timeZone);
+  }
+
   return {
     DEFAULT_CITIES: DEFAULT_CITIES,
     MINUTE: MINUTE,
@@ -871,5 +955,9 @@
     encodeState: encodeState,
     decodeState: decodeState,
     pad2: pad2,
+    countryCodeForZone: countryCodeForZone,
+    countryDisplayName: countryDisplayName,
+    timeZoneLongName: timeZoneLongName,
+    placeLabel: placeLabel,
   };
 });

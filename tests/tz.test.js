@@ -324,3 +324,89 @@ describe("converter gap-differs-from-today flag", function () {
     assert.notEqual(midMismatch.gap.minutes, bothDst.gap.minutes);
   });
 });
+
+describe("place labels", function () {
+  const winter = Date.UTC(2026, 0, 15, 12);
+  const summer = Date.UTC(2026, 6, 15, 12);
+
+  it("labels Asia/Kolkata and Asia/Calcutta as India with India Standard Time", function () {
+    assert.equal(Tz.countryCodeForZone("Asia/Kolkata"), "IN");
+    assert.equal(Tz.countryCodeForZone("Asia/Calcutta"), "IN");
+    assert.equal(Tz.countryDisplayName("IN"), "India");
+    assert.equal(Tz.placeLabel("Asia/Kolkata", winter), "India · India Standard Time");
+    assert.equal(Tz.placeLabel("Asia/Calcutta", winter), "India · India Standard Time");
+    assert.equal(Tz.placeLabel("Asia/Kolkata", summer), "India · India Standard Time");
+  });
+
+  it("labels America/New_York as United States, with Standard or Daylight in the name", function () {
+    assert.equal(Tz.countryCodeForZone("America/New_York"), "US");
+    assert.equal(Tz.countryDisplayName("US"), "United States");
+    assert.equal(
+      Tz.placeLabel("America/New_York", winter),
+      "United States · Eastern Standard Time"
+    );
+    assert.equal(
+      Tz.placeLabel("America/New_York", summer),
+      "United States · Eastern Daylight Time"
+    );
+    assert.equal(Tz.countryCodeForZone("US/Eastern"), "US");
+    assert.equal(
+      Tz.placeLabel("US/Eastern", winter),
+      "United States · Eastern Standard Time"
+    );
+  });
+
+  it("labels Australia/Sydney as Australia, with southern-hemisphere DST names", function () {
+    assert.equal(Tz.countryCodeForZone("Australia/Sydney"), "AU");
+    assert.equal(Tz.countryDisplayName("AU"), "Australia");
+    assert.equal(
+      Tz.placeLabel("Australia/Sydney", winter),
+      "Australia · Australian Eastern Daylight Time"
+    );
+    assert.equal(
+      Tz.placeLabel("Australia/Sydney", summer),
+      "Australia · Australian Eastern Standard Time"
+    );
+  });
+
+  it("labels Asia/Tokyo as Japan · Japan Standard Time", function () {
+    assert.equal(Tz.countryCodeForZone("Asia/Tokyo"), "JP");
+    assert.equal(Tz.countryDisplayName("JP"), "Japan");
+    assert.equal(Tz.placeLabel("Asia/Tokyo", winter), "Japan · Japan Standard Time");
+    assert.equal(Tz.placeLabel("Asia/Tokyo", summer), "Japan · Japan Standard Time");
+  });
+
+  it("labels Europe/London as United Kingdom", function () {
+    assert.equal(Tz.countryCodeForZone("Europe/London"), "GB");
+    assert.equal(Tz.countryDisplayName("GB"), "United Kingdom");
+    assert.equal(
+      Tz.placeLabel("Europe/London", winter),
+      "United Kingdom · Greenwich Mean Time"
+    );
+    assert.equal(
+      Tz.placeLabel("Europe/London", summer),
+      "United Kingdom · British Summer Time"
+    );
+  });
+
+  it("handles Etc/UTC and unknown zones gracefully, without a country", function () {
+    assert.equal(Tz.countryCodeForZone("Etc/UTC"), null);
+    assert.equal(Tz.countryCodeForZone("UTC"), null);
+    const utc = Tz.placeLabel("Etc/UTC", winter);
+    assert.equal(utc.indexOf(" · "), -1);
+    assert.ok(
+      utc === "Coordinated Universal Time" || utc.indexOf("UTC") !== -1,
+      "expected a UTC-style name, got " + utc
+    );
+    assert.doesNotThrow(function () {
+      Tz.placeLabel("Not/A_Zone", winter);
+    });
+    const unknown = Tz.placeLabel("Not/A_Zone", winter);
+    assert.ok(unknown.length > 0);
+    assert.equal(unknown.indexOf(" · "), -1);
+    assert.ok(
+      unknown === "Not/A_Zone" || /UTC/i.test(unknown),
+      "expected the zone id or a UTC-style fallback, got " + unknown
+    );
+  });
+});

@@ -191,42 +191,24 @@
     renderMeeting();
   }
 
-  function dstPhrase(info) {
-    if (!info.hasDST) return "";
-    return info.inDST ? "Daylight time" : "Standard time";
-  }
-
-  function metaLine(wall, info) {
-    const bits = [Tz.formatDate(wall), wall.offsetLabel];
-    const dst = dstPhrase(info);
-    if (dst) bits.push(dst);
-    return bits;
-  }
-
   function tick() {
     const now = Date.now();
     const wall = Tz.getWallParts(userZone, now);
-    const info = Tz.getDSTInfo(userZone, now);
-    els.youHeading.textContent = Tz.shortName(userZone);
+    els.youHeading.textContent = Tz.placeLabel(userZone, now);
     els.youTime.textContent = Tz.formatTime(wall, state.hour12);
-    const bits = metaLine(wall, info);
-    els.youMeta.innerHTML = escapeHtml(bits[0] + " · " + bits[1]) +
-      (bits[2] ? ' · <span class="dst">' + escapeHtml(bits[2]) + "</span>" : "");
+    els.youMeta.textContent = Tz.formatDate(wall) + " · " + wall.offsetLabel;
 
     const cards = els.clockGrid.querySelectorAll(".clock-card");
     for (let i = 0; i < cards.length; i++) {
       const tz = cards[i].getAttribute("data-tz");
       const w = Tz.getWallParts(tz, now);
-      const d = Tz.getDSTInfo(tz, now);
       const timeEl = cards[i].querySelector(".card-time");
       const dateEl = cards[i].querySelector(".card-date");
       const offEl = cards[i].querySelector(".card-off");
       if (timeEl) timeEl.textContent = Tz.formatTime(w, state.hour12);
       if (dateEl) dateEl.textContent = Tz.formatDate(w);
       if (offEl) {
-        const dst = dstPhrase(d);
-        offEl.innerHTML = escapeHtml(w.offsetLabel) +
-          (dst ? ' · <span class="dst">' + escapeHtml(dst) + "</span>" : "");
+        offEl.textContent = Tz.placeLabel(tz, now);
       }
     }
   }
@@ -651,8 +633,9 @@
       return;
     }
 
+    const captionPlace = Tz.countryDisplayName(Tz.countryCodeForZone(userZone)) || Tz.shortName(userZone);
     els.barCaption.textContent = "The bar is " + Tz.formatDate(Tz.getWallParts(userZone, dayStart)) +
-      " in " + Tz.shortName(userZone) + ".";
+      " in " + captionPlace + ".";
 
     if (overlap.none) {
       const none = document.createElement("div");
