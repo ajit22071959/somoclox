@@ -185,10 +185,21 @@
     return String(n).padStart(2, "0");
   }
 
+  const DTF_CACHE = {};
+
+  function cachedFormat(kind, timeZone, options) {
+    const key = kind + "|" + timeZone;
+    let dtf = DTF_CACHE[key];
+    if (!dtf) {
+      dtf = new Intl.DateTimeFormat("en-US", Object.assign({ timeZone: timeZone }, options));
+      DTF_CACHE[key] = dtf;
+    }
+    return dtf;
+  }
+
   function getOffsetMs(timeZone, instant) {
     const date = new Date(toMs(instant));
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone: timeZone,
+    const dtf = cachedFormat("off", timeZone, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -224,8 +235,7 @@
 
   function getWallParts(timeZone, instant) {
     const date = new Date(toMs(instant));
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone: timeZone,
+    const dtf = cachedFormat("wall", timeZone, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -1892,6 +1902,7 @@
     if (state.workStart) p.set("ws", state.workStart);
     if (state.workEnd) p.set("we", state.workEnd);
     if (state.perCityHours) p.set("wh", "1");
+    if (state.duration && Number(state.duration) !== DEFAULT_DURATION_MIN) p.set("dur", String(state.duration));
     const cityHours = state.cityHours || state.workHoursList;
     if (state.perCityHours && cityHours && cityHours.length) {
       p.set("w", cityHours.map(function (h) {
@@ -1930,6 +1941,7 @@
       workStart: p.get("ws") || "",
       workEnd: p.get("we") || "",
       perCityHours: p.get("wh") === "1",
+      duration: parseDuration(p.get("dur")),
       cityHours: (p.get("w") || "").split(",").map(function (part) {
         const m = String(part || "").trim().match(/^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
         if (!m) return null;
@@ -2010,6 +2022,286 @@
     return String(timeZone);
   }
 
+  // ---------------------------------------------------------------------
+  // Meeting length (Add to calendar)
+  // ---------------------------------------------------------------------
+
+  const DEFAULT_DURATION_MIN = 60;
+  const DURATION_CHOICES = [15, 30, 45, 60, 90, 120];
+
+  function parseDuration(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DEFAULT_DURATION_MIN;
+    return DURATION_CHOICES.indexOf(n) !== -1 ? n : DEFAULT_DURATION_MIN;
+  }
+
+  // ---------------------------------------------------------------------
+  // Weekends by country
+  // ---------------------------------------------------------------------
+  // Day numbers: 0 = Sunday … 6 = Saturday. Countries not listed use
+  // Saturday–Sunday. Checked in November 2026 against Unicode CLDR week
+  // data (the weekend table browsers ship in ICU) and Wikipedia's
+  // "Workweek and weekend" article. Where they differ:
+  //  - Bangladesh, Maldives and Palestine: Friday–Saturday (Wikipedia;
+  //    CLDR lists Saturday–Sunday).
+  //  - Djibouti and Somalia: Friday only; Brunei: Friday and Sunday;
+  //    Nepal: Saturday only (Wikipedia; CLDR lists Saturday–Sunday).
+  //  - India and Uganda: CLDR lists Sunday only (the legal minimum), but
+  //    offices broadly close on Saturday too, so they keep the default.
+  //  - UAE moved to Saturday–Sunday in 2022 and keeps the default.
+  //  - Iran: Friday only. Parliament has voted on adding Thursday or
+  //    Saturday, but no change had been enacted as of mid-2026.
+  //  - Afghanistan: Thursday–Friday (CLDR, current practice).
+  const FRI_SAT = [5, 6];
+  const WEEKEND_BY_COUNTRY = {
+    BD: FRI_SAT, BH: FRI_SAT, DZ: FRI_SAT, EG: FRI_SAT, IL: FRI_SAT,
+    IQ: FRI_SAT, JO: FRI_SAT, KW: FRI_SAT, LY: FRI_SAT, MV: FRI_SAT,
+    OM: FRI_SAT, PS: FRI_SAT, QA: FRI_SAT, SA: FRI_SAT, SD: FRI_SAT,
+    SY: FRI_SAT, YE: FRI_SAT,
+    AF: [4, 5],
+    IR: [5],
+    DJ: [5],
+    SO: [5],
+    BN: [5, 0],
+    NP: [6],
+  };
+  const DEFAULT_WEEKEND = [6, 0];
+  const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  function weekdayIndex(wall) {
+    return new Date(Date.UTC(wall.year, wall.month - 1, wall.day)).getUTCDay();
+  }
+
+  function weekendDays(countryCode) {
+    const code = String(countryCode || "").toUpperCase();
+    return (WEEKEND_BY_COUNTRY[code] || DEFAULT_WEEKEND).slice();
+  }
+
+  function formatWeekendDays(days) {
+    const names = days.map(function (d) { return WEEKDAY_SHORT[d]; });
+    if (names.length === 1) return names[0];
+    const consecutive = (days[0] + 1) % 7 === days[1];
+    return names[0] + (consecutive ? "–" : " and ") + names[1];
+  }
+
+  // Is this wall date a weekend day in the zone's country?
+  // Zones with no country (UTC, Etc/*) are never flagged.
+  function weekendInfo(timeZone, wall) {
+    const country = countryCodeForZone(timeZone);
+    const day = weekdayIndex(wall);
+    if (!country) {
+      return { known: false, isWeekend: false, country: null, days: [], dayName: WEEKDAY_LONG[day], rule: "" };
+    }
+    const days = weekendDays(country);
+    return {
+      known: true,
+      isWeekend: days.indexOf(day) !== -1,
+      country: country,
+      days: days,
+      dayName: WEEKDAY_LONG[day],
+      rule: formatWeekendDays(days),
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Picking a time on the meeting bar
+  // ---------------------------------------------------------------------
+
+  // Snap an instant to the nearest step counted from origin (local midnight
+  // of the bar's zone), so picks land on :00/:15/:30/:45 local time even on
+  // DST days and in +5:45-style zones.
+  function snapInstant(instant, origin, stepMin) {
+    const step = Math.max(1, stepMin || 15) * MINUTE;
+    return origin + Math.round((instant - origin) / step) * step;
+  }
+
+  function pickOnBar(dayStart, dayEnd, fraction, stepMin) {
+    const step = Math.max(1, stepMin || 15);
+    const f = Math.min(1, Math.max(0, Number(fraction) || 0));
+    const raw = dayStart + f * (dayEnd - dayStart);
+    const snapped = snapInstant(raw, dayStart, step);
+    const last = dayEnd - step * MINUTE;
+    return Math.min(last, Math.max(dayStart, snapped));
+  }
+
+  function instantFraction(instant, dayStart, dayEnd) {
+    if (!(dayEnd > dayStart)) return null;
+    if (instant < dayStart || instant >= dayEnd) return null;
+    return (instant - dayStart) / (dayEnd - dayStart);
+  }
+
+  // ---------------------------------------------------------------------
+  // Copy as text
+  // ---------------------------------------------------------------------
+
+  function formatShortDate(wall) {
+    return WEEKDAY_SHORT[weekdayIndex(wall)] + " " + wall.day + " " + MONTH_SHORT[wall.month - 1];
+  }
+
+  // rows: [{ label, wall }]. The first row's date leads; any city on a
+  // different date gets its own date in brackets.
+  // "Tue 12 Nov, 3:00 PM London / 4:00 PM Paris / 8:30 PM Mumbai"
+  function formatShareText(rows, hour12) {
+    const list = (rows || []).filter(function (r) { return r && r.wall; });
+    if (!list.length) return "";
+    const firstDate = formatShortDate(list[0].wall);
+    const bits = list.map(function (r) {
+      let text = formatTimeShort(r.wall, hour12) + " " + r.label;
+      const d = formatShortDate(r.wall);
+      if (d !== firstDate) text += " (" + d + ")";
+      return text;
+    });
+    return firstDate + ", " + bits.join(" / ");
+  }
+
+  // ---------------------------------------------------------------------
+  // Countdown
+  // ---------------------------------------------------------------------
+
+  function formatSpan(totalMinutes) {
+    const mins = Math.max(0, Math.round(totalMinutes));
+    const d = Math.floor(mins / 1440);
+    const h = Math.floor((mins % 1440) / 60);
+    const m = mins % 60;
+    if (d) return d + "d" + (h ? " " + h + "h" : "");
+    if (h) return h + "h" + (m ? " " + m + "m" : "");
+    return m + "m";
+  }
+
+  function formatCountdown(targetMs, nowMs) {
+    const diff = targetMs - nowMs;
+    if (Math.abs(diff) < MINUTE) return { state: "now", text: "Starting now" };
+    if (diff > 0) {
+      return { state: "future", text: "Starts in " + formatSpan(Math.ceil(diff / MINUTE)) };
+    }
+    return { state: "past", text: "Started " + formatSpan(Math.floor(-diff / MINUTE)) + " ago" };
+  }
+
+  function formatScrubOffset(minutes) {
+    const m = Math.round(Number(minutes) || 0);
+    if (m === 0) return "Now";
+    return (m > 0 ? "+" : "−") + formatSpan(Math.abs(m)) + (m > 0 ? " from now" : " ago");
+  }
+
+  // ---------------------------------------------------------------------
+  // Day and night shading
+  // ---------------------------------------------------------------------
+
+  // Local hour → "day" (7–19), "twilight" (5–7 and 19–21) or "night".
+  function daylightPhase(hour, minute) {
+    const h = Number(hour) + (Number(minute) || 0) / 60;
+    if (h >= 7 && h < 19) return "day";
+    if ((h >= 5 && h < 7) || (h >= 19 && h < 21)) return "twilight";
+    return "night";
+  }
+
+  // Merged runs of the same phase between two instants, in the zone's local
+  // time (DST-aware: the offset is read at every step).
+  function daylightSegments(timeZone, start, end, stepMin) {
+    const step = Math.max(5, stepMin || 15) * MINUTE;
+    const out = [];
+    for (let t = start; t < end; t += step) {
+      const local = new Date(t + getOffsetMs(timeZone, t));
+      const phase = daylightPhase(local.getUTCHours(), local.getUTCMinutes());
+      const segEnd = Math.min(end, t + step);
+      const last = out[out.length - 1];
+      if (last && last.phase === phase) last.end = segEnd;
+      else out.push({ start: t, end: segEnd, phase: phase });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // Calendar file (.ics, RFC 5545) and Google Calendar link
+  // ---------------------------------------------------------------------
+
+  function icsDateUtc(ms) {
+    const d = new Date(toMs(ms));
+    return d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + "T" +
+      pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z";
+  }
+
+  function icsEscape(text) {
+    return String(text == null ? "" : text)
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\r\n|\r|\n/g, "\\n");
+  }
+
+  function utf8Length(ch) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) return 1;
+    if (c < 0x800) return 2;
+    if (c < 0x10000) return 3;
+    return 4;
+  }
+
+  // Fold content lines longer than 75 octets (RFC 5545 §3.1).
+  function icsFold(line) {
+    const parts = [];
+    let current = "";
+    let bytes = 0;
+    for (const ch of String(line)) {
+      const n = utf8Length(ch);
+      const limit = parts.length ? 74 : 75;
+      if (bytes + n > limit) {
+        parts.push(current);
+        current = "";
+        bytes = 0;
+      }
+      current += ch;
+      bytes += n;
+    }
+    parts.push(current);
+    return parts.join("\r\n ");
+  }
+
+  function buildIcs(opts) {
+    const start = toMs(opts.start);
+    const duration = Math.max(1, Number(opts.durationMin) || DEFAULT_DURATION_MIN);
+    const end = start + duration * MINUTE;
+    const stamp = opts.stamp != null ? toMs(opts.stamp) : Date.now();
+    const uid = opts.uid || (icsDateUtc(start) + "-" + Math.abs(hashString(String(opts.title) + String(opts.description))) + "@somoclox");
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//somoclox//Every clock one glance//EN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      "UID:" + uid,
+      "DTSTAMP:" + icsDateUtc(stamp),
+      "DTSTART:" + icsDateUtc(start),
+      "DTEND:" + icsDateUtc(end),
+      "SUMMARY:" + icsEscape(opts.title || "Meeting (somoclox)"),
+    ];
+    if (opts.description) lines.push("DESCRIPTION:" + icsEscape(opts.description));
+    if (opts.url) lines.push("URL:" + opts.url);
+    lines.push("END:VEVENT", "END:VCALENDAR");
+    return lines.map(icsFold).join("\r\n") + "\r\n";
+  }
+
+  function hashString(text) {
+    let h = 0;
+    for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+    return h;
+  }
+
+  function googleCalendarUrl(opts) {
+    const start = toMs(opts.start);
+    const end = start + Math.max(1, Number(opts.durationMin) || DEFAULT_DURATION_MIN) * MINUTE;
+    const p = [
+      "action=TEMPLATE",
+      "text=" + encodeURIComponent(opts.title || "Meeting (somoclox)"),
+      "dates=" + icsDateUtc(start) + "/" + icsDateUtc(end),
+    ];
+    if (opts.description) p.push("details=" + encodeURIComponent(opts.description));
+    return "https://calendar.google.com/calendar/render?" + p.join("&");
+  }
+
   return {
     DEFAULT_CITIES: DEFAULT_CITIES,
     MINUTE: MINUTE,
@@ -2059,5 +2351,29 @@
     countryDisplayName: countryDisplayName,
     timeZoneLongName: timeZoneLongName,
     placeLabel: placeLabel,
+    DEFAULT_DURATION_MIN: DEFAULT_DURATION_MIN,
+    DURATION_CHOICES: DURATION_CHOICES,
+    parseDuration: parseDuration,
+    WEEKEND_BY_COUNTRY: WEEKEND_BY_COUNTRY,
+    DEFAULT_WEEKEND: DEFAULT_WEEKEND,
+    weekdayIndex: weekdayIndex,
+    weekendDays: weekendDays,
+    formatWeekendDays: formatWeekendDays,
+    weekendInfo: weekendInfo,
+    snapInstant: snapInstant,
+    pickOnBar: pickOnBar,
+    instantFraction: instantFraction,
+    formatShortDate: formatShortDate,
+    formatShareText: formatShareText,
+    formatSpan: formatSpan,
+    formatCountdown: formatCountdown,
+    formatScrubOffset: formatScrubOffset,
+    daylightPhase: daylightPhase,
+    daylightSegments: daylightSegments,
+    icsDateUtc: icsDateUtc,
+    icsEscape: icsEscape,
+    icsFold: icsFold,
+    buildIcs: buildIcs,
+    googleCalendarUrl: googleCalendarUrl,
   };
 });

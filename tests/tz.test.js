@@ -772,3 +772,189 @@ describe("country coverage in timezone search", function () {
     assert.equal(missing.length, 0, "no results for: " + missing.join("; "));
   });
 });
+
+describe("weekends by country", function () {
+  it("uses Saturday–Sunday by default and for the UAE since 2022", function () {
+    assert.deepEqual(Tz.weekendDays("GB"), [6, 0]);
+    assert.deepEqual(Tz.weekendDays("AE"), [6, 0]);
+    assert.deepEqual(Tz.weekendDays("IN"), [6, 0]);
+    assert.deepEqual(Tz.weekendDays(""), [6, 0]);
+  });
+
+  it("knows Friday–Saturday, Thursday–Friday and one-day weekends", function () {
+    ["SA", "QA", "KW", "BH", "OM", "EG", "JO", "IQ", "YE", "IL", "DZ", "BD"].forEach(function (c) {
+      assert.deepEqual(Tz.weekendDays(c), [5, 6], c);
+    });
+    assert.deepEqual(Tz.weekendDays("AF"), [4, 5]);
+    assert.deepEqual(Tz.weekendDays("IR"), [5]);
+    assert.deepEqual(Tz.weekendDays("NP"), [6]);
+    assert.deepEqual(Tz.weekendDays("BN"), [5, 0]);
+    assert.equal(Tz.formatWeekendDays([5, 6]), "Fri–Sat");
+    assert.equal(Tz.formatWeekendDays([6, 0]), "Sat–Sun");
+    assert.equal(Tz.formatWeekendDays([5, 0]), "Fri and Sun");
+    assert.equal(Tz.formatWeekendDays([5]), "Fri");
+  });
+
+  it("flags Friday in Riyadh but not in Dubai, and Saturday in both", function () {
+    const fri = local(2026, 11, 13, 10, 0); // Friday
+    const sat = local(2026, 11, 14, 10, 0);
+    const sun = local(2026, 11, 15, 10, 0);
+    assert.equal(Tz.weekdayIndex(fri), 5);
+    assert.equal(Tz.weekendInfo("Asia/Riyadh", fri).isWeekend, true);
+    assert.equal(Tz.weekendInfo("Asia/Dubai", fri).isWeekend, false);
+    assert.equal(Tz.weekendInfo("Asia/Dubai", sat).isWeekend, true);
+    assert.equal(Tz.weekendInfo("Asia/Riyadh", sun).isWeekend, false);
+    assert.equal(Tz.weekendInfo("Asia/Muscat", fri).isWeekend, true);
+    assert.equal(Tz.weekendInfo("Asia/Tehran", sat).isWeekend, false);
+    assert.equal(Tz.weekendInfo("Europe/London", sun).rule, "Sat–Sun");
+  });
+
+  it("does not flag zones without a country", function () {
+    const info = Tz.weekendInfo("UTC", local(2026, 11, 14, 10, 0));
+    assert.equal(info.known, false);
+    assert.equal(info.isWeekend, false);
+  });
+});
+
+describe("picking a time on the meeting bar", function () {
+  it("snaps to 15 minutes from local midnight", function () {
+    const date = { year: 2026, month: 11, day: 12 };
+    const b = Tz.axisDayBounds("Europe/London", date);
+    const t = Tz.pickOnBar(b.dayStart, b.dayEnd, (15 + 7 / 60) / 24, 15);
+    const wall = Tz.getWallParts("Europe/London", t);
+    assert.equal(wallTime(wall), "15:00");
+    const t2 = Tz.pickOnBar(b.dayStart, b.dayEnd, (15 + 8 / 60) / 24, 15);
+    assert.equal(wallTime(Tz.getWallParts("Europe/London", t2)), "15:15");
+  });
+
+  it("lands on quarter hours in Kathmandu (+5:45) and clamps to the day", function () {
+    const date = { year: 2026, month: 6, day: 1 };
+    const b = Tz.axisDayBounds("Asia/Kathmandu", date);
+    const t = Tz.pickOnBar(b.dayStart, b.dayEnd, 0.5, 30);
+    assert.equal(wallTime(Tz.getWallParts("Asia/Kathmandu", t)), "12:00");
+    const first = Tz.pickOnBar(b.dayStart, b.dayEnd, -1, 15);
+    const last = Tz.pickOnBar(b.dayStart, b.dayEnd, 2, 15);
+    assert.equal(wallTime(Tz.getWallParts("Asia/Kathmandu", first)), "00:00");
+    assert.equal(wallTime(Tz.getWallParts("Asia/Kathmandu", last)), "23:45");
+    assert.equal(wallDate(Tz.getWallParts("Asia/Kathmandu", last)), "2026-06-01");
+  });
+
+  it("is DST-correct on a 23-hour spring-forward day", function () {
+    const date = { year: 2026, month: 3, day: 8 };
+    const b = Tz.axisDayBounds("America/New_York", date);
+    assert.equal(b.dayEnd - b.dayStart, 23 * Tz.HOUR);
+    const t = Tz.pickOnBar(b.dayStart, b.dayEnd, 3 / 23, 15);
+    // Three real hours after midnight is 04:00 local after the jump.
+    assert.equal(wallTime(Tz.getWallParts("America/New_York", t)), "04:00");
+    assert.equal(Tz.instantFraction(t, b.dayStart, b.dayEnd), 3 / 23);
+    assert.equal(Tz.instantFraction(b.dayEnd, b.dayStart, b.dayEnd), null);
+  });
+});
+
+describe("copy as text", function () {
+  it("formats cities with one leading date", function () {
+    const t = Tz.resolveLocal("Europe/London", local(2026, 11, 10, 15, 0)).instant;
+    const rows = [
+      { label: "London", wall: Tz.getWallParts("Europe/London", t) },
+      { label: "Paris", wall: Tz.getWallParts("Europe/Paris", t) },
+      { label: "Hyderabad", wall: Tz.getWallParts("Asia/Kolkata", t) },
+    ];
+    assert.equal(Tz.formatShareText(rows, true), "Tue 10 Nov, 3:00 PM London / 4:00 PM Paris / 8:30 PM Hyderabad");
+    assert.equal(Tz.formatShareText(rows, false), "Tue 10 Nov, 15:00 London / 16:00 Paris / 20:30 Hyderabad");
+  });
+
+  it("adds the date for a city on a different day", function () {
+    const t = Tz.resolveLocal("America/New_York", local(2026, 11, 12, 20, 0)).instant;
+    const rows = [
+      { label: "New York", wall: Tz.getWallParts("America/New_York", t) },
+      { label: "Tokyo", wall: Tz.getWallParts("Asia/Tokyo", t) },
+    ];
+    assert.equal(Tz.formatShareText(rows, true), "Thu 12 Nov, 8:00 PM New York / 10:00 AM Tokyo (Fri 13 Nov)");
+    assert.equal(Tz.formatShareText([], true), "");
+  });
+});
+
+describe("countdown", function () {
+  const base = Date.UTC(2026, 10, 12, 0, 0, 0);
+  it("counts down and up", function () {
+    assert.equal(Tz.formatCountdown(base + (3 * 60 + 20) * Tz.MINUTE, base).text, "Starts in 3h 20m");
+    assert.equal(Tz.formatCountdown(base + (3 * 60 + 19) * Tz.MINUTE + 30000, base).text, "Starts in 3h 20m");
+    assert.equal(Tz.formatCountdown(base - 25 * Tz.MINUTE, base).text, "Started 25m ago");
+    assert.equal(Tz.formatCountdown(base + 20000, base).text, "Starting now");
+    assert.equal(Tz.formatCountdown(base + (2 * 1440 + 180) * Tz.MINUTE, base).text, "Starts in 2d 3h");
+    assert.equal(Tz.formatCountdown(base + 120 * Tz.MINUTE, base).text, "Starts in 2h");
+    assert.equal(Tz.formatCountdown(base + 120 * Tz.MINUTE, base).state, "future");
+  });
+
+  it("labels scrub offsets", function () {
+    assert.equal(Tz.formatScrubOffset(0), "Now");
+    assert.equal(Tz.formatScrubOffset(195), "+3h 15m from now");
+    assert.equal(Tz.formatScrubOffset(-90), "−1h 30m ago");
+  });
+});
+
+describe("day and night shading", function () {
+  it("classifies local hours", function () {
+    assert.equal(Tz.daylightPhase(3, 0), "night");
+    assert.equal(Tz.daylightPhase(6, 30), "twilight");
+    assert.equal(Tz.daylightPhase(12, 0), "day");
+    assert.equal(Tz.daylightPhase(19, 0), "twilight");
+    assert.equal(Tz.daylightPhase(21, 0), "night");
+  });
+
+  it("builds merged segments that follow DST", function () {
+    const date = { year: 2026, month: 3, day: 29 }; // London springs forward
+    const b = Tz.axisDayBounds("Europe/London", date);
+    const segs = Tz.daylightSegments("Europe/London", b.dayStart, b.dayEnd, 15);
+    assert.deepEqual(segs.map(function (s) { return s.phase; }), ["night", "twilight", "day", "twilight", "night"]);
+    assert.equal(segs[0].start, b.dayStart);
+    assert.equal(segs[segs.length - 1].end, b.dayEnd);
+    // Day starts at 07:00 BST, which is 06:00 UTC.
+    assert.equal(segs[2].start, Date.UTC(2026, 2, 29, 6, 0, 0));
+    // At London midnight it is 05:30 in Mumbai, which counts as twilight.
+    const m = Tz.daylightSegments("Asia/Kolkata", b.dayStart, b.dayEnd, 15);
+    assert.equal(m[0].phase, "twilight");
+  });
+});
+
+describe("calendar file and link", function () {
+  const start = Date.UTC(2026, 10, 12, 15, 0, 0);
+  it("builds a valid .ics with UTC times, escaping and folding", function () {
+    const desc = "London: Thu 12 Nov, 3:00 PM\nParis: Thu 12 Nov, 4:00 PM; Mumbai, India: 8:30 PM " + "x".repeat(80);
+    const ics = Tz.buildIcs({ start: start, durationMin: 90, title: "Meeting (somoclox)", description: desc, stamp: start, uid: "abc@somoclox" });
+    assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"));
+    assert.ok(ics.endsWith("END:VEVENT\r\nEND:VCALENDAR\r\n"));
+    assert.ok(ics.includes("\r\nDTSTART:20261112T150000Z\r\n"));
+    assert.ok(ics.includes("\r\nDTEND:20261112T163000Z\r\n"));
+    assert.ok(ics.includes("\r\nUID:abc@somoclox\r\n"));
+    assert.ok(ics.includes("SUMMARY:Meeting (somoclox)"));
+    const unfolded = ics.replace(/\r\n /g, "");
+    assert.ok(unfolded.includes("DESCRIPTION:London: Thu 12 Nov\\, 3:00 PM\\nParis: Thu 12 Nov\\, 4:00 PM\\; Mumbai\\, India"));
+    ics.split("\r\n").forEach(function (line) {
+      assert.ok(Buffer.byteLength(line, "utf8") <= 75, line);
+    });
+    assert.equal(ics.split("\r\n").filter(function (l) { return /^ /.test(l); }).length > 0, true);
+  });
+
+  it("folds multi-byte text without splitting characters", function () {
+    const folded = Tz.icsFold("DESCRIPTION:" + "東京".repeat(40));
+    folded.split("\r\n").forEach(function (line) {
+      assert.ok(Buffer.byteLength(line, "utf8") <= 75);
+    });
+    assert.equal(folded.replace(/\r\n /g, ""), "DESCRIPTION:" + "東京".repeat(40));
+  });
+
+  it("builds a Google Calendar template link", function () {
+    const url = Tz.googleCalendarUrl({ start: start, durationMin: 60, title: "Meeting (somoclox)", description: "a & b" });
+    assert.equal(url, "https://calendar.google.com/calendar/render?action=TEMPLATE&text=Meeting%20(somoclox)&dates=20261112T150000Z/20261112T160000Z&details=a%20%26%20b");
+  });
+
+  it("keeps the meeting length in the shared link", function () {
+    const enc = Tz.encodeState({ from: "Europe/London", duration: 30, hour12: false });
+    assert.match(enc, /(^|&)dur=30(&|$)/);
+    assert.equal(Tz.decodeState(enc).duration, 30);
+    assert.doesNotMatch(Tz.encodeState({ from: "Europe/London", duration: 60 }), /dur=/);
+    assert.equal(Tz.decodeState("dur=7").duration, 60);
+    assert.equal(Tz.decodeState("").duration, 60);
+  });
+});

@@ -39,6 +39,23 @@
     barLabel: document.getElementById("bar-label"),
     barCaption: document.getElementById("bar-caption"),
     meetWindows: document.getElementById("meet-windows"),
+    barChart: document.getElementById("bar-chart"),
+    convSummary: document.getElementById("conv-summary"),
+    convWhen: document.getElementById("conv-when"),
+    countdown: document.getElementById("countdown"),
+    convTools: document.getElementById("conv-tools"),
+    sharePreview: document.getElementById("share-preview"),
+    copyText: document.getElementById("copy-text"),
+    duration: document.getElementById("meet-duration"),
+    addIcs: document.getElementById("add-ics"),
+    gcalLink: document.getElementById("gcal-link"),
+    toolStatus: document.getElementById("tool-status"),
+    scrub: document.getElementById("scrub"),
+    scrubOut: document.getElementById("scrub-out"),
+    scrubShade: document.getElementById("scrub-shade"),
+    scrubReset: document.getElementById("scrub-reset"),
+    copyCompare: document.getElementById("copy-compare"),
+    compareStatus: document.getElementById("compare-status"),
   };
 
   const allZones = Tz.listTimeZones();
@@ -64,7 +81,14 @@
     perCityHours: false,
     workHours: {},
     meetDateManual: false,
+    duration: Tz.DEFAULT_DURATION_MIN,
+    scrubMin: 0,
   };
+
+  // Last successful conversion, used by copy, calendar and countdown.
+  let lastConv = null;
+  // Bounds of the meeting bar's day (axis = From zone), set by renderMeeting.
+  let meetBounds = null;
 
   function isKnownZone(tz) {
     try {
@@ -208,6 +232,7 @@
         workEnd: state.workEnd,
         perCityHours: state.perCityHours,
         workHours: state.workHours,
+        duration: state.duration,
       }));
     } catch (err) {
       // Storage may be blocked; the page still works for this visit.
@@ -241,6 +266,7 @@
       if (stored.workEnd) state.workEnd = stored.workEnd;
       if (typeof stored.perCityHours === "boolean") state.perCityHours = stored.perCityHours;
       if (stored.workHours && typeof stored.workHours === "object") state.workHours = stored.workHours;
+      if (stored.duration) state.duration = Tz.parseDuration(stored.duration);
     }
 
     const hash = Tz.decodeState(location.hash || location.search);
@@ -274,6 +300,7 @@
       if (location.hash.indexOf("h=") !== -1 || location.search.indexOf("h=") !== -1) {
         state.hour12 = hash.hour12;
       }
+      if (/(?:^|[#?&])dur=/.test(location.hash + "&" + location.search)) state.duration = hash.duration;
       if (hash.workStart) state.workStart = hash.workStart;
       if (hash.workEnd) state.workEnd = hash.workEnd;
       if (location.hash.indexOf("wh=") !== -1 || location.search.indexOf("wh=") !== -1) {
@@ -315,6 +342,7 @@
       workEnd: state.workEnd,
       perCityHours: state.perCityHours,
       cityHours: state.perCityHours ? cityHoursList() : [],
+      duration: state.duration,
     };
   }
 
@@ -355,17 +383,57 @@
     tickTimer = setTimeout(scheduleTick, msUntilNextMinute());
   }
 
-  function tick() {
+  // The instant shown on the Compare cities cards: now, or now moved by
+  // the scrub slider (scrubbed times start from the current quarter hour).
+  function compareInstant() {
     const now = Date.now();
-    const wall = Tz.getWallParts(userZone, now);
-    els.youHeading.textContent = Tz.placeLabel(userZone, now);
+    if (!state.scrubMin) return now;
+    const quarter = 15 * Tz.MINUTE;
+    return Math.floor(now / quarter) * quarter + state.scrubMin * Tz.MINUTE;
+  }
+
+  function phaseText(phase) {
+    if (phase === "day") return "Daytime";
+    if (phase === "twilight") return "Dawn or dusk";
+    return "Night";
+  }
+
+  function fillTags(box, tz, wall, label) {
+    box.innerHTML = "";
+    const phase = Tz.daylightPhase(wall.hour, wall.minute);
+    const p = document.createElement("span");
+    p.className = "tag tag-" + phase;
+    p.textContent = phaseText(phase);
+    box.appendChild(p);
+    const wk = Tz.weekendInfo(tz, wall);
+    if (wk.isWeekend) {
+      const w = document.createElement("span");
+      w.className = "tag tag-weekend";
+      w.textContent = "Weekend";
+      w.title = wk.dayName + " is part of the " + wk.rule + " weekend in " + (label || Tz.countryDisplayName(wk.country));
+      box.appendChild(w);
+    }
+    return { phase: phase, weekend: wk };
+  }
+
+  function tick() {
+    const realNow = Date.now();
+    const wall = Tz.getWallParts(userZone, realNow);
+    els.youHeading.textContent = Tz.placeLabel(userZone, realNow);
     els.youTime.textContent = Tz.formatTimeShort(wall, state.hour12);
     els.youMeta.textContent = Tz.formatDate(wall) + " · " + wall.offsetLabel;
 
+    const now = compareInstant();
     const cards = els.clockGrid.querySelectorAll(".clock-card");
     for (let i = 0; i < cards.length; i++) {
       const tz = cards[i].getAttribute("data-tz");
       const w = Tz.getWallParts(tz, now);
+      const tagBox = cards[i].querySelector(".card-phase");
+      if (tagBox) {
+        const info = fillTags(tagBox, tz, w, cards[i].getAttribute("data-label"));
+        cards[i].setAttribute("data-phase", info.phase);
+      }
+      cards[i].classList.toggle("scrubbing", !!state.scrubMin);
       const timeEl = cards[i].querySelector(".card-time");
       const dateEl = cards[i].querySelector(".card-date");
       const offEl = cards[i].querySelector(".card-off");
@@ -374,6 +442,102 @@
       if (offEl) {
         offEl.textContent = Tz.placeLabel(tz, now);
       }
+    }
+    renderScrub();
+  }
+
+  // ---- Scrub through time (Compare cities) ----
+
+  function renderScrub() {
+    if (!els.scrub) return;
+    const base = compareInstant() - state.scrubMin * Tz.MINUTE;
+    const shown = base + state.scrubMin * Tz.MINUTE;
+    const youWall = Tz.getWallParts(userZone, shown);
+    const offsetText = Tz.formatScrubOffset(state.scrubMin);
+    const when = Tz.formatShortDate(youWall) + ", " + Tz.formatTimeShort(youWall, state.hour12) + " your time";
+    els.scrubOut.textContent = state.scrubMin ? offsetText + " · " + when : "Now · " + when;
+    els.scrub.setAttribute("aria-valuetext", offsetText + ", " + when);
+    if (String(els.scrub.value) !== String(state.scrubMin)) els.scrub.value = String(state.scrubMin);
+    els.scrubReset.disabled = !state.scrubMin;
+    // Day/night shading for your own zone across the slider's 48 hours.
+    const start = base - 24 * Tz.HOUR;
+    const end = base + 24 * Tz.HOUR;
+    const key = userZone + "|" + start;
+    if (els.scrubShade.getAttribute("data-key") !== key) {
+      els.scrubShade.setAttribute("data-key", key);
+      els.scrubShade.innerHTML = "";
+      Tz.daylightSegments(userZone, start, end, 15).forEach(function (seg) {
+        const span = document.createElement("span");
+        span.className = "phase-" + seg.phase;
+        span.style.left = ((seg.start - start) / (end - start) * 100) + "%";
+        span.style.width = ((seg.end - seg.start) / (end - start) * 100) + "%";
+        els.scrubShade.appendChild(span);
+      });
+      const mark = document.createElement("span");
+      mark.className = "now-mark";
+      mark.style.left = "50%";
+      els.scrubShade.appendChild(mark);
+    }
+  }
+
+  let scrubFrame = 0;
+  function setScrub(minutes) {
+    state.scrubMin = Math.max(-1440, Math.min(1440, Math.round(Number(minutes) / 15) * 15 || 0));
+    if (scrubFrame) return;
+    scrubFrame = requestAnimationFrame(function () {
+      scrubFrame = 0;
+      tick();
+    });
+  }
+
+  function compareRows() {
+    const t = compareInstant();
+    return state.zones.map(function (entry) {
+      return { label: entryLabel(entry), wall: Tz.getWallParts(entry.tz, t) };
+    });
+  }
+
+  // ---- Clipboard ----
+
+  async function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (err) {
+      // fall through to the textarea fallback
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function flash(el, text) {
+    el.textContent = text;
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(function () {
+      if (el.textContent === text) el.textContent = "";
+    }, 2500);
+  }
+
+  function selectText(el) {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (err) {
+      // nothing else to do
     }
   }
 
@@ -465,6 +629,9 @@
       card.appendChild(time);
       card.appendChild(date);
       card.appendChild(off);
+      const phaseBox = document.createElement("div");
+      phaseBox.className = "tags card-phase";
+      card.appendChild(phaseBox);
       if (warnByZone[tz]) {
         const w = document.createElement("p");
         w.className = "card-warn";
@@ -693,23 +860,46 @@
     };
   }
 
+  function hideConverterExtras() {
+    lastConv = null;
+    els.convSummary.hidden = true;
+    els.convTools.hidden = true;
+  }
+
   function renderConverter() {
     const box = els.convResults;
     box.innerHTML = "";
     const parts = partsFromForm();
-    if (!parts || !state.from || !state.to.length) return;
+    if (!parts || !state.from || !state.to.length) {
+      hideConverterExtras();
+      updatePickMarker();
+      return;
+    }
     const toZones = state.to.map(function (e) { return e.tz; });
     const fromLabel = state.fromLabel || Tz.shortName(state.from);
     let result;
     try {
       result = Tz.convertMany(state.from, toZones, parts);
     } catch (err) {
+      hideConverterExtras();
       const errBox = document.createElement("div");
       errBox.className = "form-errors";
       errBox.textContent = "That date and time could not be converted.";
       box.appendChild(errBox);
+      updatePickMarker();
       return;
     }
+    const rows = [{ tz: state.from, label: fromLabel, wall: result.from.wall }].concat(
+      result.results.map(function (row, i) {
+        return {
+          tz: row.timeZone,
+          label: (state.to[i] && entryLabel(state.to[i])) || Tz.shortName(row.timeZone),
+          wall: row.wall,
+        };
+      })
+    );
+    lastConv = { instant: result.instant, rows: rows };
+    renderConverterExtras();
 
     if (result.note) {
       const note = document.createElement("div");
@@ -764,6 +954,17 @@
       card.appendChild(when);
       card.appendChild(date);
       card.appendChild(gap);
+      const tags = document.createElement("div");
+      tags.className = "tags";
+      const info = fillTags(tags, row.timeZone, row.wall, toLabel);
+      card.appendChild(tags);
+      if (info.weekend.isWeekend) {
+        const wk = document.createElement("p");
+        wk.className = "weekend-note";
+        wk.textContent = info.weekend.dayName + " is a weekend day in " + toLabel +
+          " (" + info.weekend.rule + " weekend).";
+        card.appendChild(wk);
+      }
       if (row.gapDiffersFromToday) {
         const w = document.createElement("p");
         w.className = "shift";
@@ -771,6 +972,196 @@
         card.appendChild(w);
       }
       box.appendChild(card);
+    });
+  }
+
+  function shareText() {
+    return lastConv ? Tz.formatShareText(lastConv.rows, state.hour12) : "";
+  }
+
+  function calendarDetails() {
+    const lines = lastConv.rows.map(function (r) {
+      return r.label + ": " + Tz.formatShortDate(r.wall) + ", " + Tz.formatTimeShort(r.wall, state.hour12) +
+        " (" + r.wall.offsetLabel + ")";
+    });
+    lines.push("", "Planned with somoclox: " + shareUrl());
+    return lines.join("\n");
+  }
+
+  function calendarTitle() {
+    return "Meeting (somoclox)";
+  }
+
+  function renderConverterExtras() {
+    if (!lastConv) return;
+    const from = lastConv.rows[0];
+    els.convWhen.textContent = Tz.formatShortDate(from.wall) + ", " + Tz.formatTimeShort(from.wall, state.hour12) +
+      " in " + from.label;
+    els.convSummary.hidden = false;
+    updateCountdown();
+    els.convTools.hidden = false;
+    els.sharePreview.textContent = shareText();
+    if (String(els.duration.value) !== String(state.duration)) els.duration.value = String(state.duration);
+    els.gcalLink.href = Tz.googleCalendarUrl({
+      start: lastConv.instant,
+      durationMin: state.duration,
+      title: calendarTitle(),
+      description: calendarDetails(),
+    });
+  }
+
+  function updateCountdown() {
+    if (!lastConv) return;
+    const c = Tz.formatCountdown(lastConv.instant, Date.now());
+    if (els.countdown.textContent !== c.text) els.countdown.textContent = c.text;
+    els.countdown.setAttribute("data-state", c.state);
+  }
+
+  function downloadIcs() {
+    if (!lastConv) return;
+    const ics = Tz.buildIcs({
+      start: lastConv.instant,
+      durationMin: state.duration,
+      title: calendarTitle(),
+      description: calendarDetails(),
+    });
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "somoclox-meeting-" + Tz.icsDateUtc(lastConv.instant).slice(0, 13) + ".ics";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    flash(els.toolStatus, "Calendar file downloaded. Open it to add the meeting.");
+  }
+
+  async function copyConverterText() {
+    const text = shareText();
+    if (!text) return;
+    const ok = await copyToClipboard(text);
+    if (ok) flash(els.toolStatus, "Copied");
+    else {
+      selectText(els.sharePreview);
+      flash(els.toolStatus, "Copying was blocked. The text above is selected, so press Ctrl+C or Cmd+C.");
+    }
+  }
+
+  async function copyCompareText() {
+    const text = Tz.formatShareText(compareRows(), state.hour12);
+    if (!text) return;
+    const ok = await copyToClipboard(text);
+    flash(els.compareStatus, ok ? "Copied" : "Copying was blocked: " + text);
+  }
+
+  // ---- Picking a time on the meeting bar ----
+
+  function minutesLabel(t) {
+    const wall = Tz.getWallParts(state.from, t);
+    return Tz.formatTimeShort(wall, state.hour12) + " " + (state.fromLabel || Tz.shortName(state.from));
+  }
+
+  function updatePickMarker() {
+    const chart = els.barChart;
+    if (!chart) return;
+    const old = els.hourGrid && els.hourGrid.querySelector(".pick-line");
+    const frac = (meetBounds && lastConv) ? Tz.instantFraction(lastConv.instant, meetBounds.dayStart, meetBounds.dayEnd) : null;
+    if (meetBounds) {
+      chart.setAttribute("aria-valuemax", String(Math.round((meetBounds.dayEnd - meetBounds.dayStart) / Tz.MINUTE)));
+    }
+    if (frac == null) {
+      if (old) old.remove();
+      chart.setAttribute("aria-valuenow", "0");
+      chart.setAttribute("aria-valuetext", "No time picked on this date");
+      return;
+    }
+    let line = old;
+    if (!line) {
+      line = document.createElement("span");
+      line.className = "pick-line";
+      els.hourGrid.appendChild(line);
+    }
+    line.style.left = (frac * 100) + "%";
+    chart.setAttribute("aria-valuenow", String(Math.round((lastConv.instant - meetBounds.dayStart) / Tz.MINUTE)));
+    chart.setAttribute("aria-valuetext", minutesLabel(lastConv.instant));
+  }
+
+  function applyPickedInstant(t) {
+    const wall = Tz.getWallParts(state.from, t);
+    state.date = Tz.isoDate(wall);
+    state.time = Tz.pad2(wall.hour) + ":" + Tz.pad2(wall.minute);
+    els.convDate.value = state.date;
+    els.convTime.value = state.time;
+    state.meetDateManual = !!(state.meetingDate && state.meetingDate !== state.date);
+    syncHash();
+    renderConverter();
+    updatePickMarker();
+  }
+
+  function barFraction(clientX) {
+    const r = els.hourGrid.getBoundingClientRect();
+    if (!r.width) return null;
+    return (clientX - r.left) / r.width;
+  }
+
+  function bindBarPicking() {
+    const chart = els.barChart;
+    if (!chart) return;
+    let dragging = false;
+    let pending = null;
+    let frame = 0;
+
+    function pickAt(clientX) {
+      if (!meetBounds) return;
+      const f = barFraction(clientX);
+      if (f == null) return;
+      pending = f;
+      if (frame) return;
+      frame = requestAnimationFrame(function () {
+        frame = 0;
+        if (pending == null || !meetBounds) return;
+        applyPickedInstant(Tz.pickOnBar(meetBounds.dayStart, meetBounds.dayEnd, pending, 15));
+        pending = null;
+      });
+    }
+
+    chart.addEventListener("pointerdown", function (e) {
+      if (e.button !== 0 || !meetBounds) return;
+      const r = els.hourGrid.getBoundingClientRect();
+      if (e.clientX < r.left - 6 || e.clientX > r.right + 6) return;
+      dragging = true;
+      try { chart.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      pickAt(e.clientX);
+    });
+    chart.addEventListener("pointermove", function (e) {
+      if (dragging) pickAt(e.clientX);
+    });
+    function stop(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { chart.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    }
+    chart.addEventListener("pointerup", stop);
+    chart.addEventListener("pointercancel", stop);
+
+    chart.addEventListener("keydown", function (e) {
+      if (!meetBounds) return;
+      const step = 15 * Tz.MINUTE;
+      const len = meetBounds.dayEnd - meetBounds.dayStart;
+      let current = lastConv && Tz.instantFraction(lastConv.instant, meetBounds.dayStart, meetBounds.dayEnd) != null
+        ? lastConv.instant
+        : meetBounds.dayStart + 9 * Tz.HOUR;
+      let next = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") next = current + (e.shiftKey ? 4 : 1) * step;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = current - (e.shiftKey ? 4 : 1) * step;
+      else if (e.key === "PageUp") next = current + 4 * step;
+      else if (e.key === "PageDown") next = current - 4 * step;
+      else if (e.key === "Home") next = meetBounds.dayStart;
+      else if (e.key === "End") next = meetBounds.dayEnd - step;
+      if (next == null) return;
+      e.preventDefault();
+      applyPickedInstant(Tz.pickOnBar(meetBounds.dayStart, meetBounds.dayEnd, (next - meetBounds.dayStart) / len, 15));
     });
   }
 
@@ -898,6 +1289,7 @@
     if (els.hourGrid) els.hourGrid.innerHTML = "";
     els.barCaption.textContent = "";
     els.meetCities.textContent = "";
+    meetBounds = null;
     if (els.meetBarWrap) els.meetBarWrap.hidden = false;
 
     if (!state.to.length) {
@@ -934,6 +1326,7 @@
       els.barCaption.textContent = "Those working hours could not be applied to this date.";
       return;
     }
+    meetBounds = { dayStart: overlap.dayStart, dayEnd: overlap.dayEnd };
 
     const dayStart = overlap.dayStart;
     const dayEnd = overlap.dayEnd;
@@ -941,7 +1334,7 @@
     renderHourAxis();
     els.barCaption.textContent = "Times shown in " + fromLabel + " time";
 
-    function addLane(name, intervals, overlapLane) {
+    function addLane(name, intervals, overlapLane, zone) {
       const lane = document.createElement("div");
       lane.className = "lane" + (overlapLane ? " overlap" : "");
       const labelEl = document.createElement("div");
@@ -949,6 +1342,15 @@
       labelEl.textContent = name;
       const track = document.createElement("div");
       track.className = "lane-track";
+      if (zone && length) {
+        Tz.daylightSegments(zone, dayStart, dayEnd, 15).forEach(function (seg) {
+          const shade = document.createElement("div");
+          shade.className = "lane-shade phase-" + seg.phase;
+          shade.style.left = ((seg.start - dayStart) / length * 100) + "%";
+          shade.style.width = ((seg.end - seg.start) / length * 100) + "%";
+          track.appendChild(shade);
+        });
+      }
       (intervals || []).forEach(function (iv) {
         const clipped = Tz.clipInterval(iv, dayStart, dayEnd);
         if (!clipped || !length) return;
@@ -966,9 +1368,10 @@
     }
 
     overlap.lanes.forEach(function (lane) {
-      addLane(lane.label, lane.intervals, false);
+      addLane(lane.label, lane.intervals, false, lane.timeZone);
     });
     addLane("Overlap", overlap.intervals, true);
+    updatePickMarker();
 
     if (overlap.none) {
       const none = document.createElement("div");
@@ -980,6 +1383,7 @@
       }
       none.textContent = text;
       els.meetWindows.appendChild(none);
+      appendWeekendNote(els.meetWindows, people, dayStart + length / 2);
       return;
     }
 
@@ -997,8 +1401,23 @@
       }).join(" · ");
       card.appendChild(h);
       card.appendChild(p);
+      appendWeekendNote(card, people, win.start);
       els.meetWindows.appendChild(card);
     });
+  }
+
+  function appendWeekendNote(box, people, instant) {
+    const notes = [];
+    people.forEach(function (entry) {
+      const wall = Tz.getWallParts(entry.tz, instant);
+      const wk = Tz.weekendInfo(entry.tz, wall);
+      if (wk.isWeekend) notes.push(wk.dayName + " is a weekend day in " + entryLabel(entry) + " (" + wk.rule + ")");
+    });
+    if (!notes.length) return;
+    const p = document.createElement("p");
+    p.className = "window-weekend";
+    p.textContent = "Heads up: " + notes.join("; ") + ".";
+    box.appendChild(p);
   }
 
   function dummyWall(hour, minute) {
@@ -1073,6 +1492,29 @@
     });
     els.perCityHours.addEventListener("change", function () {
       setPerCityHours(els.perCityHours.checked);
+    });
+    els.copyText.addEventListener("click", function () { copyConverterText(); });
+    els.addIcs.addEventListener("click", function () { downloadIcs(); });
+    els.duration.addEventListener("change", function () {
+      state.duration = Tz.parseDuration(els.duration.value);
+      writeStore();
+      syncHash();
+      renderConverterExtras();
+    });
+    els.gcalLink.addEventListener("click", function (e) {
+      if (!lastConv) e.preventDefault();
+    });
+    els.scrub.addEventListener("input", function () { setScrub(els.scrub.value); });
+    els.scrub.addEventListener("change", function () { setScrub(els.scrub.value); });
+    els.scrubReset.addEventListener("click", function () {
+      setScrub(0);
+      els.scrub.value = "0";
+    });
+    els.copyCompare.addEventListener("click", function () { copyCompareText(); });
+    bindBarPicking();
+    setInterval(updateCountdown, 15000);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) { updateCountdown(); tick(); }
     });
 
     bindCombo(document.getElementById("zone-search"), document.getElementById("zone-list"), function (tz, row) {

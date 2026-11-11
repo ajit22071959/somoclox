@@ -700,6 +700,244 @@
       border: 0;
     }
 
+    /* Converter summary, countdown and tools */
+    .conv-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 12px;
+      margin-top: 18px;
+      padding: 12px 16px;
+      background: #15231b;
+      border: 1px solid #3b5040;
+      border-radius: 14px;
+    }
+    .conv-summary[hidden] { display: none; }
+    .conv-when {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+      color: #e9f0e4;
+      overflow-wrap: break-word;
+      min-width: 0;
+    }
+    .countdown {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #102018;
+      background: var(--accent);
+      border-radius: 999px;
+      padding: 3px 10px;
+      white-space: nowrap;
+    }
+    .countdown[data-state="past"] { background: #33463a; color: #dbe7d6; }
+    .countdown[data-state="now"] { background: #e8bc7b; color: #2a1d08; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 650;
+      border-radius: 999px;
+      padding: 2px 9px;
+      border: 1px solid #3b5040;
+      color: #dbe7d6;
+      background: #18261e;
+    }
+    .tag-day { background: #24392b; border-color: #58705d; }
+    .tag-twilight { background: #1c2a24; border-color: #4d6253; }
+    .tag-night { background: #0b120e; border-color: #34463a; color: #b0bdaf; }
+    .tag-weekend { background: #2a2418; border-color: #6a5a3a; color: #f0e0c0; }
+    .result-card .weekend-note { color: #f0e0c0; }
+    .conv-tools { margin-top: 14px; }
+    .conv-tools[hidden] { display: none; }
+    .share-preview {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: #dbe7d6;
+      background: #0f1913;
+      border: 1px dashed #3b5040;
+      border-radius: 12px;
+      padding: 10px 12px;
+      overflow-wrap: break-word;
+      user-select: all;
+    }
+    .tool-row, .cal-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .tool-row { justify-content: space-between; }
+    .inline-label { font-size: 13px; color: var(--muted); }
+    .cal-group select {
+      width: auto;
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #58705d;
+      background: #101a14;
+      color: var(--ink);
+      font-size: 13px;
+    }
+    .link-btn { text-decoration: none; display: inline-block; }
+    .tool-status {
+      font-size: 12px;
+      color: var(--accent);
+      min-height: 1.2em;
+      margin: 8px 0 0;
+    }
+    .scrub-actions .tool-status { margin: 0; }
+
+    /* Meeting bar picking and day/night shading */
+    .bar-hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+    .bar-chart { cursor: crosshair; touch-action: pan-y; border-radius: 10px; }
+    .bar-chart:focus-visible { outline: 3px solid #e8bc7b; outline-offset: 6px; }
+    .lane-shade {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      pointer-events: none;
+    }
+    .phase-day { background: #31493a; }
+    .phase-twilight { background: #1b2b21; }
+    .phase-night { background: #070d0a; }
+    .lane-seg { z-index: 1; }
+    .lane:not(.overlap) .lane-seg { background: #5f8f68; opacity: .9; }
+    .pick-line {
+      position: absolute;
+      top: -4px;
+      bottom: -4px;
+      width: 2px;
+      margin-left: -1px;
+      background: #e8bc7b;
+      border-radius: 2px;
+      box-shadow: 0 0 0 1px #10171599;
+      z-index: 3;
+    }
+    .pick-line::before {
+      content: "";
+      position: absolute;
+      top: -5px;
+      left: -4px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #e8bc7b;
+    }
+    .bar-legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      margin: 6px 0 0;
+    }
+    .sw {
+      display: inline-block;
+      width: 14px;
+      height: 10px;
+      border-radius: 3px;
+      border: 1px solid #3b5040;
+      vertical-align: -1px;
+    }
+    .lg { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .sw-day { background: #31493a; }
+    .sw-twilight { background: #1b2b21; }
+    .sw-night { background: #070d0a; }
+    .sw-work { background: #5f8f68; }
+    .window-weekend { margin: 6px 0 0; font-size: 12px; color: #f0e0c0; }
+
+    /* Scrub through time */
+    .scrub {
+      margin: 0 0 16px;
+      padding: 14px 16px;
+      background: #121c16;
+      border: 1px solid #3b5040;
+      border-radius: 14px;
+    }
+    .scrub-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      margin-bottom: 8px;
+    }
+    .scrub-head label { font-size: 13px; font-weight: 650; color: #e9f0e4; }
+    .scrub-head output { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .scrub-track { position: relative; height: 28px; }
+    .scrub-shade {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 8px;
+      height: 12px;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid #3b5040;
+      background: #0f1913;
+    }
+    .scrub-shade span { position: absolute; top: 0; bottom: 0; }
+    .scrub-shade .now-mark { width: 2px; margin-left: -1px; background: #b0d6af; opacity: .7; }
+    #scrub {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 28px;
+      margin: 0;
+      background: transparent;
+      -webkit-appearance: none;
+      appearance: none;
+      cursor: grab;
+      touch-action: pan-y;
+    }
+    #scrub:active { cursor: grabbing; }
+    #scrub::-webkit-slider-runnable-track { height: 28px; background: transparent; }
+    #scrub::-moz-range-track { height: 28px; background: transparent; }
+    #scrub::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      margin-top: 3px;
+      border-radius: 50%;
+      background: #b0d6af;
+      border: 3px solid #101715;
+      box-shadow: 0 0 0 1px #b0d6af, 0 3px 10px #00000060;
+    }
+    #scrub::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #b0d6af;
+      border: 3px solid #101715;
+      box-shadow: 0 0 0 1px #b0d6af;
+    }
+    .scrub-scale {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .scrub-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .clock-card .card-phase { margin-top: 8px; }
+    .clock-card[data-phase="day"] { background: #16241b; }
+    .clock-card[data-phase="night"] { background: #0c1310; }
+    .clock-card[data-phase="twilight"] { background: #141f19; }
+    .clock-card.scrubbing .card-time { color: #e8bc7b; }
+
     @media (max-width: 900px) {
       .clock-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .form-grid, .meet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -716,9 +954,15 @@
       .clock-grid, .form-grid, .meet-grid, .meet-grid.per-city-on { grid-template-columns: 1fr; }
       .hours-row { grid-template-columns: 1fr 1fr; }
       .hours-row .city-label { grid-column: 1 / -1; padding-bottom: 0; }
-      .bar-wrap { --lane-name-w: 58px; --lane-gap: 6px; }
+      .bar-wrap { --lane-name-w: 66px; --lane-gap: 6px; padding-right: 8px; }
+      .lane-name { overflow-wrap: anywhere; hyphens: auto; }
       .lane-name { text-align: left; font-size: 11px; }
       .axis-label-fine { display: none; }
+      .tool-row, .cal-group { flex-direction: column; align-items: stretch; }
+      .cal-group select { width: 100%; }
+      .tool-row .secondary, .scrub-actions .secondary { width: 100%; text-align: center; }
+      .scrub-actions { flex-direction: column; align-items: stretch; }
+      .conv-summary { flex-direction: column; align-items: flex-start; }
       .you-time { letter-spacing: -2px; }
       .primary, .actions .secondary, .ghost { width: 100%; }
       .actions { flex-direction: column; align-items: stretch; }
@@ -787,7 +1031,31 @@
         <span class="sr-only">Selected To timezones</span>
         <div class="target-list" id="to-targets"></div>
       </div>
+      <div class="conv-summary" id="conv-summary" hidden>
+        <p class="conv-when" id="conv-when"></p>
+        <span class="countdown" id="countdown" data-state="future"></span>
+      </div>
       <div class="results" id="conv-results" aria-live="polite"></div>
+      <div class="conv-tools" id="conv-tools" hidden>
+        <p class="share-preview" id="share-preview"></p>
+        <div class="tool-row">
+          <button type="button" class="secondary" id="copy-text">Copy as text</button>
+          <div class="cal-group">
+            <label class="inline-label" for="meet-duration">Length</label>
+            <select id="meet-duration">
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="45">45 min</option>
+              <option value="60" selected>1 hour</option>
+              <option value="90">1½ hours</option>
+              <option value="120">2 hours</option>
+            </select>
+            <button type="button" class="secondary" id="add-ics">Add to calendar</button>
+            <a class="secondary link-btn" id="gcal-link" href="#" target="_blank" rel="noopener">Google Calendar</a>
+          </div>
+        </div>
+        <p class="tool-status" id="tool-status" role="status" aria-live="polite"></p>
+      </div>
     </section>
 
     <section class="panel" aria-labelledby="meet-heading">
@@ -814,7 +1082,8 @@
       <div class="hours-rows" id="per-city-rows" hidden></div>
       <p class="meet-cities" id="meet-cities"></p>
       <div class="bar-wrap" id="meet-bar-wrap">
-        <div class="bar-chart">
+        <p class="bar-hint" id="bar-hint">Tap or drag on the bar to pick a time. It fills in the converter above.</p>
+        <div class="bar-chart" id="bar-chart" tabindex="0" role="slider" aria-label="Pick a meeting time" aria-valuemin="0" aria-valuemax="1440" aria-valuenow="0" aria-valuetext="No time picked">
           <div class="hour-grid" id="hour-grid" aria-hidden="true"></div>
           <div class="bar-axis">
             <div class="lane-spacer" aria-hidden="true"></div>
@@ -823,6 +1092,7 @@
           <div class="lanes" id="meet-bar" role="img" aria-label="Working hours and overlap"></div>
         </div>
         <p class="bar-caption" id="bar-caption"></p>
+        <p class="bar-legend" aria-hidden="true"><span class="lg"><span class="sw sw-day"></span>Day</span><span class="lg"><span class="sw sw-twilight"></span>Dawn or dusk</span><span class="lg"><span class="sw sw-night"></span>Night</span><span class="lg"><span class="sw sw-work"></span>Working hours</span></p>
       </div>
       <div class="windows" id="meet-windows" aria-live="polite"></div>
     </section>
@@ -838,6 +1108,22 @@
         </div>
       </div>
       <div class="favs" id="favs"></div>
+      <div class="scrub" id="scrub-box">
+        <div class="scrub-head">
+          <label for="scrub">Drag to move through time</label>
+          <output id="scrub-out" for="scrub">Now</output>
+        </div>
+        <div class="scrub-track">
+          <div class="scrub-shade" id="scrub-shade" aria-hidden="true"></div>
+          <input id="scrub" type="range" min="-1440" max="1440" step="15" value="0">
+        </div>
+        <div class="scrub-scale" aria-hidden="true"><span>−24h</span><span>Now</span><span>+24h</span></div>
+        <div class="scrub-actions">
+          <button type="button" class="secondary" id="scrub-reset" disabled>Reset to now</button>
+          <button type="button" class="secondary" id="copy-compare">Copy as text</button>
+          <span class="tool-status" id="compare-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
       <div class="clock-grid" id="clock-grid"></div>
       <div class="dst-notes" id="dst-notes"></div>
     </section>
