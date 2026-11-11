@@ -40,10 +40,13 @@
   })();
 
   const state = {
-    zones: Tz.DEFAULT_CITIES.map(function (c) { return Tz.resolveZone(c.timeZone); }),
+    zones: Tz.DEFAULT_CITIES.map(function (c) {
+      return { tz: Tz.resolveZone(c.timeZone), label: c.label };
+    }),
     favs: [],
     hour12: false,
     from: userZone,
+    fromLabel: "",
     to: [],
     date: "",
     time: "",
@@ -64,7 +67,7 @@
   function unique(list) {
     const out = [];
     for (let i = 0; i < list.length; i++) {
-      const tz = Tz.resolveZone(list[i]);
+      const tz = Tz.resolveZone(typeof list[i] === "string" ? list[i] : (list[i] && (list[i].tz || list[i].timeZone)));
       if (!tz) continue;
       let seen = false;
       for (let j = 0; j < out.length; j++) {
@@ -73,6 +76,62 @@
       if (!seen) out.push(tz);
     }
     return out;
+  }
+
+  function entryLabel(entry) {
+    if (!entry) return "";
+    return entry.label || Tz.shortName(entry.tz);
+  }
+
+  function asEntry(value, fallbackLabel) {
+    if (!value) return null;
+    if (typeof value === "string") {
+      const usable = Tz.usableZoneName(value) || Tz.resolveZone(value);
+      if (!isKnownZone(usable)) return null;
+      return { tz: usable, label: fallbackLabel || Tz.shortName(usable) };
+    }
+    const raw = value.tz || value.timeZone;
+    const usable = Tz.usableZoneName(raw) || Tz.resolveZone(raw) || raw;
+    if (!isKnownZone(usable)) return null;
+    return { tz: usable, label: value.label || fallbackLabel || Tz.shortName(usable) };
+  }
+
+  function sameEntry(a, b) {
+    if (!a || !b) return false;
+    return Tz.sameZone(a.tz, b.tz) && entryLabel(a) === entryLabel(b);
+  }
+
+  function uniqueEntries(list) {
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      const entry = asEntry(list[i]);
+      if (!entry) continue;
+      let seen = false;
+      for (let j = 0; j < out.length; j++) {
+        if (sameEntry(out[j], entry)) { seen = true; break; }
+      }
+      if (!seen) out.push(entry);
+    }
+    return out;
+  }
+
+  function parseStoredEntries(list) {
+    if (!Array.isArray(list)) return [];
+    return uniqueEntries(list);
+  }
+
+  function labelForZone(tz, entries) {
+    for (let i = 0; i < (entries || []).length; i++) {
+      if (Tz.sameZone(entries[i].tz, tz)) return entryLabel(entries[i]);
+    }
+    return Tz.shortName(tz);
+  }
+
+  function gapLabel(gap, fromLabel, toLabel) {
+    const minutes = gap && typeof gap.minutes === "number" ? gap.minutes : 0;
+    if (minutes === 0) return toLabel + " is the same time as " + fromLabel;
+    if (minutes > 0) return toLabel + " is " + Tz.formatDuration(minutes) + " ahead of " + fromLabel;
+    return toLabel + " is " + Tz.formatDuration(-minutes) + " behind " + fromLabel;
   }
 
   function readStore() {
@@ -117,9 +176,10 @@
     const stored = readStore();
     if (stored) {
       if (Array.isArray(stored.zones) && stored.zones.length) {
-        state.zones = stored.zones.map(Tz.resolveZone).filter(isKnownZone);
+        const entries = parseStoredEntries(stored.zones);
+        if (entries.length) state.zones = entries;
       }
-      if (Array.isArray(stored.favs)) state.favs = stored.favs.map(Tz.resolveZone).filter(isKnownZone);
+      if (Array.isArray(stored.favs)) state.favs = parseStoredEntries(stored.favs);
       if (typeof stored.hour12 === "boolean") state.hour12 = stored.hour12;
       if (stored.workStart) state.workStart = stored.workStart;
       if (stored.workEnd) state.workEnd = stored.workEnd;
@@ -129,9 +189,27 @@
     const hasHash = !!(location.hash && location.hash.length > 1) ||
       !!(location.search && /(?:^|[?&])(z|from|d|t|h)=/.test(location.search));
     if (hasHash) {
-      if (hash.zones.length) state.zones = hash.zones.map(Tz.resolveZone).filter(isKnownZone);
-      if (hash.from && isKnownZone(hash.from)) state.from = Tz.resolveZone(hash.from);
-      if (hash.to.length) state.to = hash.to.map(Tz.resolveZone).filter(isKnownZone);
+      if (hash.zoneEntries && hash.zoneEntries.length) {
+        const entries = parseStoredEntries(hash.zoneEntries);
+        if (entries.length) state.zones = entries;
+      } else if (hash.zones.length) {
+        const entries = parseStoredEntries(hash.zones);
+        if (entries.length) state.zones = entries;
+      }
+      if (hash.from && (isKnownZone(hash.from) || Tz.acceptedTimeZone(hash.from))) {
+        const fromEntry = asEntry({ tz: hash.from, label: hash.fromLabel });
+        if (fromEntry) {
+          state.from = fromEntry.tz;
+          state.fromLabel = fromEntry.label;
+        }
+      }
+      if (hash.toEntries && hash.toEntries.length) {
+        const entries = parseStoredEntries(hash.toEntries);
+        if (entries.length) state.to = entries;
+      } else if (hash.to.length) {
+        const entries = parseStoredEntries(hash.to);
+        if (entries.length) state.to = entries;
+      }
       if (hash.date) state.date = hash.date;
       if (hash.time) state.time = hash.time;
       if (hash.meetingDate) state.meetingDate = hash.meetingDate;
@@ -142,12 +220,10 @@
       if (hash.workEnd) state.workEnd = hash.workEnd;
     }
 
-    state.zones = unique(state.zones);
-    state.favs = unique(state.favs);
-    if (!state.to.length) state.to = [defaultToZone()];
-    if (state.to.indexOf(state.from) !== -1 && state.to.length === 1) {
-      // Fine to convert a zone to itself; leave it.
-    }
+    state.zones = uniqueEntries(state.zones);
+    state.favs = uniqueEntries(state.favs);
+    if (!state.to.length) state.to = [asEntry(defaultToZone())];
+    state.to = uniqueEntries(state.to);
     if (!state.date) state.date = todayInZone(userZone);
     if (!state.time) state.time = currentTimeInZone(state.from);
     if (!state.meetingDate) state.meetingDate = state.date;
@@ -156,8 +232,11 @@
   function currentShareState() {
     return {
       zones: state.zones,
+      zoneEntries: state.zones,
       from: state.from,
+      fromLabel: state.fromLabel,
       to: state.to,
+      toEntries: state.to,
       date: state.date,
       time: state.time,
       meetingDate: state.meetingDate,
@@ -191,11 +270,24 @@
     renderMeeting();
   }
 
+  let tickTimer = 0;
+
+  function msUntilNextMinute() {
+    const now = Date.now();
+    return 60000 - (now % 60000) + 25;
+  }
+
+  function scheduleTick() {
+    tick();
+    clearTimeout(tickTimer);
+    tickTimer = setTimeout(scheduleTick, msUntilNextMinute());
+  }
+
   function tick() {
     const now = Date.now();
     const wall = Tz.getWallParts(userZone, now);
     els.youHeading.textContent = Tz.placeLabel(userZone, now);
-    els.youTime.textContent = Tz.formatTime(wall, state.hour12);
+    els.youTime.textContent = Tz.formatTimeShort(wall, state.hour12);
     els.youMeta.textContent = Tz.formatDate(wall) + " · " + wall.offsetLabel;
 
     const cards = els.clockGrid.querySelectorAll(".clock-card");
@@ -205,7 +297,7 @@
       const timeEl = cards[i].querySelector(".card-time");
       const dateEl = cards[i].querySelector(".card-date");
       const offEl = cards[i].querySelector(".card-off");
-      if (timeEl) timeEl.textContent = Tz.formatTime(w, state.hour12);
+      if (timeEl) timeEl.textContent = Tz.formatTimeShort(w, state.hour12);
       if (dateEl) dateEl.textContent = Tz.formatDate(w);
       if (offEl) {
         offEl.textContent = Tz.placeLabel(tz, now);
@@ -223,13 +315,13 @@
 
   function renderFavs() {
     els.favs.innerHTML = "";
-    state.favs.forEach(function (tz) {
+    state.favs.forEach(function (entry) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "chip";
-      btn.textContent = Tz.shortName(tz);
-      btn.setAttribute("aria-label", "Add " + Tz.friendlyName(tz) + " to the grid");
-      btn.addEventListener("click", function () { addZone(tz); });
+      btn.textContent = entryLabel(entry);
+      btn.setAttribute("aria-label", "Add " + entryLabel(entry) + " to the grid");
+      btn.addEventListener("click", function () { addZone(entry.tz, entry.label); });
       els.favs.appendChild(btn);
     });
   }
@@ -244,21 +336,24 @@
       renderDstNotes();
       return;
     }
-    const warnings = Tz.dstWarnings(state.zones, Date.now(), 30, userZone);
+    const warnings = Tz.dstWarnings(state.zones.map(function (e) { return e.tz; }), Date.now(), 30, userZone);
     const warnByZone = {};
     warnings.forEach(function (w) { warnByZone[w.timeZone] = w; });
 
-    state.zones.forEach(function (tz) {
+    state.zones.forEach(function (entry) {
+      const tz = entry.tz;
+      const label = entryLabel(entry);
       const card = document.createElement("article");
       card.className = "clock-card" + (Tz.sameZone(tz, userZone) ? " you-card" : "");
       card.setAttribute("data-tz", tz);
+      card.setAttribute("data-label", label);
 
       const top = document.createElement("div");
       top.className = "card-top";
 
       const name = document.createElement("div");
       name.className = "card-name";
-      name.textContent = Tz.shortName(tz);
+      name.textContent = label;
       if (Tz.sameZone(tz, userZone)) {
         const badge = document.createElement("span");
         badge.className = "you-badge";
@@ -271,17 +366,17 @@
       favBtn.type = "button";
       favBtn.className = "icon-btn";
       favBtn.innerHTML = starSvg;
-      const faved = state.favs.indexOf(tz) !== -1;
+      const faved = state.favs.some(function (f) { return sameEntry(f, entry); });
       favBtn.setAttribute("aria-pressed", faved ? "true" : "false");
-      favBtn.setAttribute("aria-label", (faved ? "Remove " : "Save ") + Tz.shortName(tz) + " as a favourite");
-      favBtn.addEventListener("click", function () { toggleFav(tz); });
+      favBtn.setAttribute("aria-label", (faved ? "Remove " : "Save ") + label + " as a favourite");
+      favBtn.addEventListener("click", function () { toggleFav(entry); });
 
       const rm = document.createElement("button");
       rm.type = "button";
       rm.className = "icon-btn";
       rm.innerHTML = closeSvg;
-      rm.setAttribute("aria-label", "Remove " + Tz.shortName(tz));
-      rm.addEventListener("click", function () { removeZone(tz); });
+      rm.setAttribute("aria-label", "Remove " + label);
+      rm.addEventListener("click", function () { removeZone(entry); });
 
       top.appendChild(name);
       top.appendChild(favBtn);
@@ -325,19 +420,20 @@
     });
   }
 
-  function addZone(tz) {
-    tz = Tz.resolveZone(tz);
-    if (!isKnownZone(tz)) return;
-    const exists = state.zones.some(function (z) { return Tz.sameZone(z, tz); });
+  function addZone(tz, label) {
+    const entry = asEntry({ tz: tz, label: label });
+    if (!entry) return;
+    const exists = state.zones.some(function (z) { return sameEntry(z, entry); });
     if (!exists) {
-      state.zones.push(tz);
+      state.zones.push(entry);
       writeStore();
       syncHash();
       renderGrid();
       renderMeeting();
     } else {
-      const card = els.clockGrid.querySelector('[data-tz="' + cssEscape(tz) + '"]');
-      if (card) card.focus ? card.scrollIntoView({ block: "nearest" }) : null;
+      const card = els.clockGrid.querySelector('[data-tz="' + cssEscape(entry.tz) + '"][data-label="' + cssEscape(entry.label) + '"]') ||
+        els.clockGrid.querySelector('[data-tz="' + cssEscape(entry.tz) + '"]');
+      if (card) card.scrollIntoView({ block: "nearest" });
     }
   }
 
@@ -346,17 +442,17 @@
     return String(value).replace(/"/g, '\\"');
   }
 
-  function removeZone(tz) {
-    state.zones = state.zones.filter(function (z) { return z !== tz; });
+  function removeZone(entry) {
+    state.zones = state.zones.filter(function (z) { return !sameEntry(z, entry); });
     writeStore();
     syncHash();
     renderGrid();
     renderMeeting();
   }
 
-  function toggleFav(tz) {
-    const i = state.favs.indexOf(tz);
-    if (i === -1) state.favs.push(tz);
+  function toggleFav(entry) {
+    const i = state.favs.findIndex(function (z) { return sameEntry(z, entry); });
+    if (i === -1) state.favs.push({ tz: entry.tz, label: entryLabel(entry) });
     else state.favs.splice(i, 1);
     writeStore();
     renderFavs();
@@ -430,7 +526,7 @@
     }
 
     function refresh() {
-      open(Tz.searchTimeZones(input.value, allZones));
+      open(Tz.searchTimeZones(input.value));
     }
 
     input.addEventListener("input", refresh);
@@ -466,17 +562,17 @@
 
   function renderTargets() {
     els.toTargets.innerHTML = "";
-    state.to.forEach(function (tz) {
+    state.to.forEach(function (entry) {
       const chip = document.createElement("span");
       chip.className = "target-chip";
-      chip.appendChild(document.createTextNode(Tz.shortName(tz)));
+      chip.appendChild(document.createTextNode(entryLabel(entry)));
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.setAttribute("aria-label", "Remove " + Tz.shortName(tz));
+      btn.setAttribute("aria-label", "Remove " + entryLabel(entry));
       btn.textContent = "×";
       btn.addEventListener("click", function () {
         if (state.to.length === 1) return;
-        state.to = state.to.filter(function (z) { return z !== tz; });
+        state.to = state.to.filter(function (z) { return !sameEntry(z, entry); });
         syncHash();
         renderTargets();
         renderConverter();
@@ -486,10 +582,10 @@
     });
   }
 
-  function addTarget(tz) {
-    tz = Tz.resolveZone(tz);
-    if (!isKnownZone(tz)) return;
-    if (!state.to.some(function (z) { return Tz.sameZone(z, tz); })) state.to.push(tz);
+  function addTarget(tz, label) {
+    const entry = asEntry({ tz: tz, label: label });
+    if (!entry) return;
+    if (!state.to.some(function (z) { return sameEntry(z, entry); })) state.to.push(entry);
     syncHash();
     renderTargets();
     renderConverter();
@@ -498,7 +594,8 @@
   function fillForm() {
     els.convDate.value = state.date;
     els.convTime.value = state.time;
-    document.getElementById("conv-from").value = Tz.friendlyName(state.from);
+    const fromName = state.fromLabel || Tz.friendlyName(state.from);
+    document.getElementById("conv-from").value = fromName;
     els.meetDate.value = state.meetingDate;
     els.workStart.value = state.workStart;
     els.workEnd.value = state.workEnd;
@@ -524,9 +621,11 @@
     box.innerHTML = "";
     const parts = partsFromForm();
     if (!parts || !state.from || !state.to.length) return;
+    const toZones = state.to.map(function (e) { return e.tz; });
+    const fromLabel = state.fromLabel || Tz.shortName(state.from);
     let result;
     try {
-      result = Tz.convertMany(state.from, state.to, parts);
+      result = Tz.convertMany(state.from, toZones, parts);
     } catch (err) {
       const errBox = document.createElement("div");
       errBox.className = "form-errors";
@@ -558,7 +657,7 @@
         const li = document.createElement("li");
         const label = i === 0 ? "Earlier" : "Later";
         const bits = row.targets.map(function (t) {
-          return Tz.shortName(t.timeZone) + " " + Tz.formatTimeShort(t.wall, state.hour12) +
+          return labelForZone(t.timeZone, state.to) + " " + Tz.formatTimeShort(t.wall, state.hour12) +
             " (" + t.wall.offsetLabel + ")";
         });
         li.textContent = label + " (" + row.from.offsetLabel + "): " + bits.join("; ");
@@ -569,12 +668,13 @@
       box.appendChild(alt);
     }
 
-    result.results.forEach(function (row) {
+    result.results.forEach(function (row, i) {
+      const toLabel = (state.to[i] && entryLabel(state.to[i])) || Tz.shortName(row.timeZone);
       const card = document.createElement("div");
       card.className = "result-card";
       const where = document.createElement("div");
       where.className = "where";
-      where.textContent = Tz.shortName(row.timeZone);
+      where.textContent = toLabel;
       const when = document.createElement("p");
       when.className = "when";
       when.textContent = Tz.formatTimeShort(row.wall, state.hour12);
@@ -582,7 +682,7 @@
       date.innerHTML = escapeHtml(Tz.formatDate(row.wall)) +
         ' · <span class="shift">' + escapeHtml(row.dayShift) + "</span>";
       const gap = document.createElement("p");
-      gap.textContent = row.gap.label + " at this date.";
+      gap.textContent = gapLabel(row.gap, fromLabel, toLabel) + " at this date.";
       card.appendChild(where);
       card.appendChild(when);
       card.appendChild(date);
@@ -590,7 +690,7 @@
       if (row.gapDiffersFromToday) {
         const w = document.createElement("p");
         w.className = "shift";
-        w.textContent = "Today the gap is different: " + row.gapToday.label + ".";
+        w.textContent = "Today the gap is different: " + gapLabel(row.gapToday, fromLabel, toLabel) + ".";
         card.appendChild(w);
       }
       box.appendChild(card);
@@ -673,7 +773,7 @@
         const li = document.createElement("li");
         const city = document.createElement("span");
         city.className = "city";
-        city.textContent = Tz.shortName(z.timeZone);
+        city.textContent = labelForZone(z.timeZone, state.zones.concat([{ tz: userZone, label: Tz.countryDisplayName(Tz.countryCodeForZone(userZone)) || Tz.shortName(userZone) }]));
         const time = document.createElement("span");
         time.textContent = Tz.formatTimeShort(z.start, state.hour12) + " – " + Tz.formatTimeShort(z.end, state.hour12);
         li.appendChild(city);
@@ -743,17 +843,20 @@
       document.getElementById(id).addEventListener("input", onFormChange);
     });
 
-    bindCombo(document.getElementById("zone-search"), document.getElementById("zone-list"), function (tz) {
-      addZone(tz);
+    bindCombo(document.getElementById("zone-search"), document.getElementById("zone-list"), function (tz, row) {
+      addZone(tz, row && row.displayLabel);
     });
-    bindCombo(document.getElementById("conv-from"), document.getElementById("from-list"), function (tz) {
-      state.from = tz;
-      document.getElementById("conv-from").value = Tz.friendlyName(tz);
+    bindCombo(document.getElementById("conv-from"), document.getElementById("from-list"), function (tz, row) {
+      const entry = asEntry({ tz: tz, label: row && row.displayLabel });
+      if (!entry) return;
+      state.from = entry.tz;
+      state.fromLabel = entry.label;
+      document.getElementById("conv-from").value = entry.label;
       syncHash();
       renderConverter();
     }, { keepValue: true });
-    bindCombo(document.getElementById("conv-to"), document.getElementById("to-list"), function (tz) {
-      addTarget(tz);
+    bindCombo(document.getElementById("conv-to"), document.getElementById("to-list"), function (tz, row) {
+      addTarget(tz, row && row.displayLabel);
     });
 
     window.addEventListener("hashchange", function () {
@@ -775,7 +878,7 @@
   renderGrid();
   renderConverter();
   renderMeeting();
-  setInterval(tick, 1000);
+  scheduleTick();
   setTimeout(function () {
     try { Tz.searchTimeZones(" "); } catch (err) {}
   }, 0);

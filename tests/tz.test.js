@@ -479,3 +479,178 @@ describe("timezone search", function () {
     assert.match(title, /Central European/i);
   });
 });
+
+
+describe("chosen display labels", function () {
+  it("uses Hyderabad as the display label when searching hyderabad", function () {
+    const rows = Tz.searchTimeZones("hyderabad");
+    assert.ok(rows.length, "expected results for hyderabad");
+    assert.ok(Tz.sameZone(rows[0].timeZone, "Asia/Kolkata"));
+    assert.equal(rows[0].displayLabel, "Hyderabad");
+    assert.equal(rows[0].labelKind, "city");
+  });
+
+  it("uses the country name for a country pick", function () {
+    const rows = Tz.searchTimeZones("Sri Lanka");
+    assert.ok(rows.length);
+    assert.ok(Tz.sameZone(rows[0].timeZone, "Asia/Colombo"));
+    assert.equal(rows[0].displayLabel, "Sri Lanka");
+    assert.equal(rows[0].labelKind, "country");
+  });
+
+  it("uses the representative city for a timezone-name pick", function () {
+    const rows = Tz.searchTimeZones("central standard time");
+    assert.ok(rows.length);
+    assert.ok(Tz.sameZone(rows[0].timeZone, "America/Chicago"));
+    assert.equal(rows[0].displayLabel, "Chicago");
+    assert.equal(rows[0].labelKind, "zone");
+  });
+
+  it("round-trips custom display labels, including two labels for the same zone", function () {
+    const state = {
+      zones: [
+        { tz: "Asia/Kolkata", label: "Hyderabad" },
+        { tz: "Asia/Kolkata", label: "Mumbai" },
+      ],
+      from: "Asia/Kolkata",
+      fromLabel: "Hyderabad",
+      to: [{ tz: "America/St_Vincent", label: "Saint Vincent and the Grenadines" }],
+      date: "2026-03-29",
+      time: "15:30",
+      meetingDate: "2026-03-30",
+      hour12: false,
+      workStart: "09:00",
+      workEnd: "18:00",
+    };
+    const encoded = Tz.encodeState(state);
+    const decoded = Tz.decodeState(encoded);
+    assert.equal(decoded.zoneEntries.length, 2);
+    assert.ok(Tz.sameZone(decoded.zoneEntries[0].tz, "Asia/Kolkata"));
+    assert.equal(decoded.zoneEntries[0].label, "Hyderabad");
+    assert.ok(Tz.sameZone(decoded.zoneEntries[1].tz, "Asia/Kolkata"));
+    assert.equal(decoded.zoneEntries[1].label, "Mumbai");
+    assert.ok(Tz.sameZone(decoded.from, "Asia/Kolkata"));
+    assert.equal(decoded.fromLabel, "Hyderabad");
+    assert.equal(decoded.toEntries.length, 1);
+    assert.equal(decoded.toEntries[0].label, "Saint Vincent and the Grenadines");
+    assert.ok(
+      Tz.sameZone(decoded.toEntries[0].tz, "America/St_Vincent") ||
+      Tz.sameZone(decoded.toEntries[0].tz, "America/Puerto_Rico")
+    );
+    const again = Tz.decodeState("#" + encoded);
+    assert.deepEqual(again.zoneEntries, decoded.zoneEntries);
+  });
+
+  it("keeps unlabelled zone lists compatible with older shareable links", function () {
+    const decoded = Tz.decodeState("z=America/New_York,Europe/London&from=America/New_York&to=Asia/Tokyo&d=2026-03-29&t=15:30&h=24");
+    assert.deepEqual(decoded.zones, ["America/New_York", "Europe/London"]);
+    assert.equal(decoded.from, "America/New_York");
+    assert.deepEqual(decoded.to, ["Asia/Tokyo"]);
+  });
+});
+
+describe("country coverage in timezone search", function () {
+  function firstZone(query) {
+    const rows = Tz.searchTimeZones(query);
+    return rows[0] && rows[0].timeZone;
+  }
+
+  it("finds Saint Vincent and the Grenadines and St Vincent", function () {
+    const longName = Tz.searchTimeZones("Saint Vincent and the Grenadines");
+    assert.ok(longName.length, "expected a result for Saint Vincent and the Grenadines");
+    const tz = longName[0].timeZone;
+    assert.ok(
+      Tz.sameZone(tz, "America/St_Vincent") || Tz.sameZone(tz, "America/Puerto_Rico") ||
+        Tz.countryCodeForZone(tz) === "VC" || /vincent/i.test(longName[0].title + longName[0].displayLabel),
+      "unexpected zone " + tz + " / " + longName[0].title
+    );
+    assert.ok(Tz.acceptedTimeZone(tz));
+    const short = firstZone("St Vincent");
+    assert.ok(short);
+    assert.ok(
+      Tz.sameZone(short, tz) || Tz.countryCodeForZone(short) === "VC" || Tz.sameZone(short, "America/St_Vincent")
+    );
+  });
+
+  it("accepts common official and informal country names", function () {
+    const cases = [
+      ["St. Lucia", "LC", "America/St_Lucia"],
+      ["Saint Kitts and Nevis", "KN", "America/St_Kitts"],
+      ["Côte d’Ivoire", "CI", "Africa/Abidjan"],
+      ["Ivory Coast", "CI", "Africa/Abidjan"],
+      ["Timor-Leste", "TL", "Asia/Dili"],
+      ["East Timor", "TL", "Asia/Dili"],
+      ["Myanmar", "MM", "Asia/Yangon"],
+      ["Burma", "MM", "Asia/Yangon"],
+      ["Eswatini", "SZ", "Africa/Mbabane"],
+      ["Swaziland", "SZ", "Africa/Mbabane"],
+      ["Cape Verde", "CV", "Atlantic/Cape_Verde"],
+      ["Cabo Verde", "CV", "Atlantic/Cape_Verde"],
+      ["Türkiye", "TR", "Europe/Istanbul"],
+      ["Turkey", "TR", "Europe/Istanbul"],
+    ];
+    cases.forEach(function (row) {
+      const query = row[0];
+      const code = row[1];
+      const hint = row[2];
+      const hits = Tz.searchTimeZones(query);
+      assert.ok(hits.length, "expected a result for " + JSON.stringify(query));
+      const ok = hits.some(function (h) {
+        return Tz.countryCodeForZone(h.timeZone) === code ||
+          Tz.sameZone(h.timeZone, hint) ||
+          Tz.sameZone(h.timeZone, Tz.resolveZone(hint));
+      });
+      assert.ok(ok, query + " -> " + hits.map(function (h) { return h.timeZone; }).join(", "));
+    });
+  });
+
+  it("returns at least one result for every zone.tab country and its English DisplayNames name", function () {
+    const fs = require("fs");
+    const path = require("path");
+    const map = require("../zone-countries.js");
+    const codes = {};
+    Object.keys(map).forEach(function (zone) {
+      const code = map[zone];
+      if (/^[A-Z]{2}$/.test(code)) codes[code] = codes[code] || zone;
+    });
+    const tabPaths = [
+      path.join(__dirname, "../scripts/tzdata/zone.tab"),
+      "/usr/share/zoneinfo/zone.tab",
+    ];
+    let tab = "";
+    for (let i = 0; i < tabPaths.length; i++) {
+      try {
+        tab = fs.readFileSync(tabPaths[i], "utf8");
+        if (tab) break;
+      } catch (err) {}
+    }
+    assert.ok(tab, "zone.tab was not found for the country-coverage test");
+    const missing = [];
+    const lines = tab.split(/\r?\n/);
+    const names = (typeof Intl.DisplayNames === "function")
+      ? new Intl.DisplayNames(["en"], { type: "region" })
+      : null;
+    const seen = {};
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line || line.charAt(0) === "#") continue;
+      const cols = line.split("\t");
+      const code = (cols[0] || "").trim();
+      if (!/^[A-Z]{2}$/.test(code) || seen[code]) continue;
+      seen[code] = true;
+      codes[code] = codes[code] || (cols[2] || "").trim();
+      const queries = [code];
+      if (names) {
+        try {
+          const label = names.of(code);
+          if (label) queries.push(label);
+        } catch (err) {}
+      }
+      queries.forEach(function (query) {
+        const hits = Tz.searchTimeZones(query);
+        if (!hits.length) missing.push(code + " / " + JSON.stringify(query));
+      });
+    }
+    assert.equal(missing.length, 0, "no results for: " + missing.join("; "));
+  });
+});

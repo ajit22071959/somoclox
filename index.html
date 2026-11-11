@@ -235,8 +235,11 @@
       padding: 8px 10px;
       border-radius: 8px;
       font-size: 13px;
+      line-height: 1.35;
+      white-space: normal;
       overflow-wrap: break-word;
       word-wrap: break-word;
+      word-break: normal;
     }
     .combo-list [role="option"] small {
       display: block;
@@ -387,13 +390,15 @@
 
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
       align-items: end;
     }
     .field { min-width: 0; }
     .field .combo { margin-top: 7px; }
     .field input, .field select { margin-top: 7px; display: block; }
+    .field-to { margin-top: 14px; }
+    .field-to .combo-list { min-width: 100%; }
     .targets { margin-top: 14px; }
     .target-list {
       display: flex;
@@ -473,6 +478,8 @@
       font-size: 14px;
       font-weight: 650;
       color: #e9f0e4;
+      overflow-wrap: break-word;
+      word-break: normal;
     }
     .result-card p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
     .result-card .shift { color: #e8bc7b; }
@@ -617,23 +624,8 @@
     <section class="you" aria-labelledby="you-heading">
       <p class="eyebrow">Your time</p>
       <h1 class="you-place" id="you-heading">Your timezone</h1>
-      <p class="you-time" id="you-time">--:--:--</p>
+      <p class="you-time" id="you-time">--:--</p>
       <p class="you-meta" id="you-meta"></p>
-    </section>
-
-    <section class="panel" aria-labelledby="compare-heading">
-      <h2 id="compare-heading">Compare cities</h2>
-      <p class="lead">Add any timezone to the grid. Star a city to keep it in your favourites on this device.</p>
-      <div class="add-row">
-        <label for="zone-search">Add a timezone</label>
-        <div class="combo" data-combo="add">
-          <input id="zone-search" type="search" autocomplete="off" placeholder="Type a city or zone, for example London or Tokyo" aria-autocomplete="list" aria-controls="zone-list" aria-expanded="false">
-          <ul class="combo-list" id="zone-list" role="listbox" hidden></ul>
-        </div>
-      </div>
-      <div class="favs" id="favs"></div>
-      <div class="clock-grid" id="clock-grid"></div>
-      <div class="dst-notes" id="dst-notes"></div>
     </section>
 
     <section class="panel" aria-labelledby="convert-heading">
@@ -655,12 +647,12 @@
             <ul class="combo-list" id="from-list" role="listbox" hidden></ul>
           </div>
         </div>
-        <div class="field">
-          <label for="conv-to">Add a To timezone</label>
-          <div class="combo" data-combo="to">
-            <input id="conv-to" type="text" autocomplete="off" placeholder="Timezone" aria-autocomplete="list" aria-controls="to-list" aria-expanded="false">
-            <ul class="combo-list" id="to-list" role="listbox" hidden></ul>
-          </div>
+      </div>
+      <div class="field field-to">
+        <label for="conv-to">Add a To Timezone, city or Country</label>
+        <div class="combo" data-combo="to">
+          <input id="conv-to" type="text" autocomplete="off" placeholder="Timezone, city or country" aria-autocomplete="list" aria-controls="to-list" aria-expanded="false">
+          <ul class="combo-list" id="to-list" role="listbox" hidden></ul>
         </div>
       </div>
       <div class="targets">
@@ -668,6 +660,21 @@
         <div class="target-list" id="to-targets"></div>
       </div>
       <div class="results" id="conv-results" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="compare-heading">
+      <h2 id="compare-heading">Compare cities</h2>
+      <p class="lead">Add any timezone to the grid. Star a city to keep it in your favourites on this device.</p>
+      <div class="add-row">
+        <label for="zone-search">Add a timezone</label>
+        <div class="combo" data-combo="add">
+          <input id="zone-search" type="search" autocomplete="off" placeholder="Type a city or zone, for example London or Tokyo" aria-autocomplete="list" aria-controls="zone-list" aria-expanded="false">
+          <ul class="combo-list" id="zone-list" role="listbox" hidden></ul>
+        </div>
+      </div>
+      <div class="favs" id="favs"></div>
+      <div class="clock-grid" id="clock-grid"></div>
+      <div class="dst-notes" id="dst-notes"></div>
     </section>
 
     <section class="panel" aria-labelledby="meet-heading">

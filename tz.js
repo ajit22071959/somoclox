@@ -438,12 +438,12 @@
     return out;
   }
 
-  function describeGap(fromZone, toZone, instant) {
+  function describeGap(fromZone, toZone, instant, names) {
     const fromOff = getOffsetMs(fromZone, instant);
     const toOff = getOffsetMs(toZone, instant);
     const minutes = Math.round((toOff - fromOff) / MINUTE);
-    const fromName = shortName(fromZone);
-    const toName = shortName(toZone);
+    const fromName = (names && names.from) || shortName(fromZone);
+    const toName = (names && names.to) || shortName(toZone);
     let label;
     if (minutes === 0) {
       label = toName + " is the same time as " + fromName;
@@ -850,6 +850,42 @@
     NZ: ["New Zealand"],
     FJ: ["Fiji"],
     PG: ["Papua New Guinea"],
+    VC: [
+      "Saint Vincent and the Grenadines",
+      "St Vincent",
+      "St. Vincent",
+      "St Vincent and the Grenadines",
+      "St. Vincent and the Grenadines",
+      "St. Vincent & Grenadines",
+    ],
+    LC: ["Saint Lucia", "St Lucia", "St. Lucia"],
+    KN: [
+      "Saint Kitts and Nevis",
+      "St Kitts and Nevis",
+      "St. Kitts and Nevis",
+      "St Kitts",
+      "Saint Kitts",
+      "St. Kitts & Nevis",
+    ],
+    TL: ["Timor-Leste", "East Timor", "Timor Leste"],
+    SZ: ["Eswatini", "Swaziland"],
+    CV: ["Cape Verde", "Cabo Verde"],
+    CI: ["Ivory Coast", "Cote d'Ivoire", "Côte d'Ivoire", "Côte d’Ivoire"],
+    TR: ["Turkey", "Turkiye", "Türkiye"],
+    VA: ["Vatican", "Vatican City", "Holy See"],
+    SM: ["San Marino"],
+    AX: ["Aland", "Aland Islands", "Åland", "Åland Islands"],
+    SJ: ["Svalbard", "Svalbard and Jan Mayen", "Svalbard & Jan Mayen", "Jan Mayen"],
+    AG: ["Antigua and Barbuda", "Antigua & Barbuda"],
+    ST: ["Sao Tome and Principe", "São Tomé and Príncipe", "Sao Tome"],
+    FM: ["Micronesia", "Federated States of Micronesia"],
+    CD: ["DR Congo", "DRC", "Democratic Republic of the Congo", "Congo-Kinshasa"],
+    CG: ["Congo-Brazzaville", "Republic of the Congo"],
+    SH: ["Saint Helena", "St Helena", "St. Helena", "Saint Helena, Ascension and Tristan da Cunha"],
+    PM: ["Saint Pierre and Miquelon", "St Pierre and Miquelon", "St. Pierre and Miquelon", "St. Pierre & Miquelon"],
+    BL: ["Saint Barthelemy", "St Barthelemy", "St. Barthélemy", "Saint Barthélemy"],
+    MF: ["Saint Martin", "St Martin", "St. Martin"],
+    SX: ["Sint Maarten", "Saint Martin (Dutch)"],
   };
 
   const ABBREVIATIONS = {
@@ -1100,18 +1136,27 @@
   let cachedSearchIndex = null;
 
   function normalizeSearch(value) {
-    return String(value || "")
+    let s = String(value || "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim()
-      .replace(/\s+/g, " ");
+      .replace(/[’'`´]/g, "")
+      .replace(/&/g, " and ");
+    // Expand "St" / "St." to "Saint", but leave two-letter codes such as ST (São Tomé) alone.
+    const trimmed = s.trim();
+    if (!/^[a-z]{2}$/.test(trimmed)) {
+      s = s.replace(/\bst\.?\b/g, "saint ");
+    }
+    return s.replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
   }
+
+  const SEARCH_STOPWORDS = { and: true, the: true, of: true };
 
   function searchTokens(value) {
     const n = normalizeSearch(value);
-    return n ? n.split(" ") : [];
+    const words = n ? n.split(" ") : [];
+    const meaningful = words.filter(function (w) { return !SEARCH_STOPWORDS[w]; });
+    return meaningful.length ? meaningful : words;
   }
 
   function uniqueStrings(values) {
@@ -1140,20 +1185,64 @@
     return best;
   }
 
+  function acceptedTimeZone(timeZone) {
+    if (!timeZone) return false;
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timeZone }).format(new Date(0));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function usableZoneName(timeZone) {
+    try {
+      const preferred = preferredZone(timeZone);
+      if (preferred && acceptedTimeZone(preferred)) return preferred;
+      if (acceptedTimeZone(timeZone)) return timeZone;
+      const resolved = resolveZone(timeZone);
+      if (resolved && acceptedTimeZone(resolved)) return resolved;
+    } catch (err) {
+      // unknown zone
+    }
+    return "";
+  }
+
   function uniqueSearchZones() {
     const raw = listTimeZones();
     const out = [];
+    const seen = {};
+    function addZoneId(timeZone) {
+      const usable = usableZoneName(timeZone);
+      if (!usable || seen[usable]) return;
+      seen[usable] = true;
+      out.push(usable);
+    }
     for (let i = 0; i < raw.length; i++) {
-      const resolved = resolveZone(raw[i]);
-      let seen = false;
-      for (let j = 0; j < out.length; j++) {
-        if (sameZone(out[j], resolved)) { seen = true; break; }
-      }
-      if (!seen) out.push(resolved);
+      addZoneId(resolveZone(raw[i]));
     }
     if (!out.some(function (z) { return z === "UTC" || z === "Etc/UTC"; })) {
-      out.push("UTC");
+      addZoneId("UTC");
     }
+    // Include zone.tab / backward alias zones whose country would otherwise
+    // be missing because the zone is only a link (e.g. America/St_Vincent).
+    const covered = {};
+    for (let i = 0; i < out.length; i++) {
+      const code = countryCodeForZone(out[i]);
+      if (code) covered[code] = true;
+    }
+    Object.keys(ZONE_COUNTRIES).forEach(function (zone) {
+      if (!/^[A-Za-z0-9_/+-]+$/.test(zone)) return;
+      const code = ZONE_COUNTRIES[zone];
+      if (!code || covered[code]) return;
+      const name = acceptedTimeZone(zone) ? zone : usableZoneName(zone);
+      if (!name) return;
+      if (!seen[name]) {
+        seen[name] = true;
+        out.push(name);
+      }
+      covered[code] = true;
+    });
     return out;
   }
 
@@ -1416,7 +1505,56 @@
     return "matches: " + matched;
   }
 
+  function fieldMatchesQuery(fieldNorm, queryNorm, queryWords) {
+    if (!fieldNorm || !queryNorm) return false;
+    if (fieldNorm === queryNorm) return true;
+    if (fieldNorm.indexOf(queryNorm + " ") === 0 || fieldNorm.indexOf(queryNorm) === 0) return true;
+    const words = fieldNorm.split(" ");
+    return queryWords.length > 0 && queryWords.every(function (qw) {
+      return words.some(function (w) { return w === qw || (qw.length >= 3 && w.indexOf(qw) === 0); });
+    });
+  }
+
+  function isShortCountryToken(name) {
+    const n = normalizeSearch(name);
+    if (!n) return true;
+    if (n.length <= 3 && n.indexOf(" ") === -1) return true;
+    return n === "usa" || n === "u s a" || n === "u s" || n === "u k" || n === "uk" || n === "uae" || n === "u a e" || n === "drc" || n === "rok" || n === "dprk" || n === "prc" || n === "ksa";
+  }
+
+  function pickDisplayLabel(entry, query, queryNorm, queryWords) {
+    const qn = queryNorm || normalizeSearch(query);
+    const qw = queryWords || searchTokens(query);
+    if (qn) {
+      for (let i = 0; i < (entry.cities || []).length; i++) {
+        const city = entry.cities[i];
+        if (fieldMatchesQuery(normalizeSearch(city), qn, qw)) {
+          return { displayLabel: city, labelKind: "city" };
+        }
+      }
+      let countryHit = "";
+      for (let i = 0; i < (entry.countryNames || []).length; i++) {
+        const name = entry.countryNames[i];
+        if (fieldMatchesQuery(normalizeSearch(name), qn, qw)) {
+          if (normalizeSearch(name) === qn && !isShortCountryToken(name)) {
+            return { displayLabel: name, labelKind: "country" };
+          }
+          if (!countryHit) countryHit = name;
+        }
+      }
+      if (countryHit) {
+        const nice = (entry.country && !isShortCountryToken(entry.country)) ? entry.country : countryHit;
+        const exactLong = (entry.countryNames || []).find(function (name) {
+          return normalizeSearch(name) === qn && !isShortCountryToken(name);
+        });
+        return { displayLabel: exactLong || nice || countryHit, labelKind: "country" };
+      }
+    }
+    return { displayLabel: shortName(entry.timeZone), labelKind: "zone" };
+  }
+
   function searchTimeZones(query, zones) {
+
     const list = zones || null;
     const q = String(query || "").trim();
     const index = buildSearchIndex();
@@ -1437,6 +1575,8 @@
           name: entry.title,
           title: entry.title,
           short: shortName(entry.timeZone),
+          displayLabel: shortName(entry.timeZone),
+          labelKind: "zone",
           matchLabel: "",
           score: 0,
         };
@@ -1452,11 +1592,14 @@
       const entry = pool[i];
       const hit = bestFieldScore(entry, queryNorm, queryWords);
       if (!hit) continue;
+      const picked = pickDisplayLabel(entry, q, queryNorm, queryWords);
       scored.push({
         timeZone: entry.timeZone,
         name: entry.title,
         title: entry.title,
         short: shortName(entry.timeZone),
+        displayLabel: picked.displayLabel,
+        labelKind: picked.labelKind,
         matchLabel: matchNote(entry, hit.matched, queryNorm),
         score: hit.score,
         priority: entry.priority,
@@ -1532,11 +1675,56 @@
     return "UTC";
   }
 
+  function encodeLabelPart(label) {
+    return encodeURIComponent(String(label)).replace(/[!'()*]/g, function (c) {
+      return "%" + c.charCodeAt(0).toString(16).toUpperCase();
+    });
+  }
+
+  function decodeLabelPart(part) {
+    try {
+      return decodeURIComponent(String(part).replace(/\+/g, " "));
+    } catch (err) {
+      return String(part || "");
+    }
+  }
+
+  function encodeZoneEntry(item) {
+    if (!item) return "";
+    if (typeof item === "string") return item;
+    const tz = item.tz || item.timeZone;
+    if (!tz) return "";
+    const label = item.label;
+    if (!label || label === shortName(tz)) return tz;
+    return tz + ":" + encodeLabelPart(label);
+  }
+
+  function encodeZoneList(list) {
+    if (!list || !list.length) return "";
+    return list.map(encodeZoneEntry).filter(Boolean).join(",");
+  }
+
+  function parseZoneEntry(token) {
+    const s = String(token || "").trim();
+    if (!s) return null;
+    const colon = s.indexOf(":");
+    if (colon === -1) {
+      return { tz: s, timeZone: s, label: shortName(s) };
+    }
+    const tz = s.slice(0, colon);
+    const label = decodeLabelPart(s.slice(colon + 1)) || shortName(tz);
+    return { tz: tz, timeZone: tz, label: label };
+  }
+
   function encodeState(state) {
     const p = new URLSearchParams();
-    if (state.zones && state.zones.length) p.set("z", state.zones.join(","));
-    if (state.from) p.set("from", state.from);
-    if (state.to && state.to.length) p.set("to", state.to.join(","));
+    const zones = encodeZoneList(state.zoneEntries || state.zones);
+    if (zones) p.set("z", zones);
+    if (state.from) {
+      p.set("from", encodeZoneEntry({ tz: state.from, label: state.fromLabel }));
+    }
+    const to = encodeZoneList(state.toEntries || state.to);
+    if (to) p.set("to", to);
     if (state.date) p.set("d", state.date);
     if (state.time) p.set("t", state.time);
     if (state.meetingDate) p.set("md", state.meetingDate);
@@ -1554,11 +1742,18 @@
       if (!v) return [];
       return v.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
     }
+    const zoneEntries = list("z").map(parseZoneEntry).filter(Boolean);
+    const toEntries = list("to").map(parseZoneEntry).filter(Boolean);
+    const fromToken = p.get("from") || "";
+    const fromEntry = fromToken ? parseZoneEntry(fromToken) : null;
     const hour = p.get("h");
     return {
-      zones: list("z"),
-      from: p.get("from") || "",
-      to: list("to"),
+      zones: zoneEntries.map(function (e) { return e.tz; }),
+      zoneEntries: zoneEntries,
+      from: fromEntry ? fromEntry.tz : "",
+      fromLabel: fromEntry && fromEntry.label !== shortName(fromEntry.tz) ? fromEntry.label : (fromEntry ? fromEntry.label : ""),
+      to: toEntries.map(function (e) { return e.tz; }),
+      toEntries: toEntries,
       date: p.get("d") || "",
       time: p.get("t") || "",
       meetingDate: p.get("md") || "",
@@ -1676,6 +1871,11 @@
     detectTimeZone: detectTimeZone,
     encodeState: encodeState,
     decodeState: decodeState,
+    parseZoneEntry: parseZoneEntry,
+    encodeZoneEntry: encodeZoneEntry,
+    acceptedTimeZone: acceptedTimeZone,
+    pickDisplayLabel: pickDisplayLabel,
+    usableZoneName: usableZoneName,
     pad2: pad2,
     countryCodeForZone: countryCodeForZone,
     countryDisplayName: countryDisplayName,
