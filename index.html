@@ -540,26 +540,63 @@
       overflow-wrap: break-word;
     }
     .meet-cities strong { color: #e9f0e4; }
-    .bar-wrap { margin-top: 8px; }
-    .bar-label {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: var(--muted);
-      margin: 0 0 6px;
-      padding-left: 96px;
-      font-variant-numeric: tabular-nums;
+    .bar-wrap {
+      margin-top: 8px;
+      --lane-name-w: 88px;
+      --lane-gap: 8px;
+      padding-right: 14px;
     }
+    .bar-chart { position: relative; }
+    .bar-axis,
+    .lane {
+      display: grid;
+      grid-template-columns: var(--lane-name-w) minmax(0, 1fr);
+      gap: var(--lane-gap);
+      align-items: center;
+      min-width: 0;
+    }
+    .lane-spacer { min-width: 0; }
+    .axis-track {
+      position: relative;
+      height: 16px;
+      border: 1px solid transparent;
+      min-width: 0;
+    }
+    .axis-label {
+      position: absolute;
+      top: 0;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .hour-grid {
+      position: absolute;
+      top: 18px;
+      bottom: 0;
+      left: calc(var(--lane-name-w) + var(--lane-gap) + 1px);
+      right: 1px;
+      z-index: 2;
+      pointer-events: none;
+    }
+    .hour-tick {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      margin-left: -0.5px;
+      background: var(--line);
+      opacity: 0.35;
+    }
+    .hour-tick-major { opacity: 0.55; }
     .lanes {
       display: grid;
       gap: 6px;
-    }
-    .lane {
-      display: grid;
-      grid-template-columns: 88px minmax(0, 1fr);
-      gap: 8px;
-      align-items: center;
-      min-width: 0;
+      position: relative;
+      z-index: 1;
     }
     .lane-name {
       font-size: 12px;
@@ -679,9 +716,9 @@
       .clock-grid, .form-grid, .meet-grid, .meet-grid.per-city-on { grid-template-columns: 1fr; }
       .hours-row { grid-template-columns: 1fr 1fr; }
       .hours-row .city-label { grid-column: 1 / -1; padding-bottom: 0; }
-      .bar-label { padding-left: 0; }
-      .lane { grid-template-columns: 1fr; gap: 3px; }
-      .lane-name { text-align: left; }
+      .bar-wrap { --lane-name-w: 58px; --lane-gap: 6px; }
+      .lane-name { text-align: left; font-size: 11px; }
+      .axis-label-fine { display: none; }
       .you-time { letter-spacing: -2px; }
       .primary, .actions .secondary, .ghost { width: 100%; }
       .actions { flex-direction: column; align-items: stretch; }
@@ -777,8 +814,14 @@
       <div class="hours-rows" id="per-city-rows" hidden></div>
       <p class="meet-cities" id="meet-cities"></p>
       <div class="bar-wrap" id="meet-bar-wrap">
-        <div class="bar-label" id="bar-label"></div>
-        <div class="lanes" id="meet-bar" role="img" aria-label="Working hours and overlap"></div>
+        <div class="bar-chart">
+          <div class="hour-grid" id="hour-grid" aria-hidden="true"></div>
+          <div class="bar-axis">
+            <div class="lane-spacer" aria-hidden="true"></div>
+            <div class="axis-track" id="bar-label"></div>
+          </div>
+          <div class="lanes" id="meet-bar" role="img" aria-label="Working hours and overlap"></div>
+        </div>
         <p class="bar-caption" id="bar-caption"></p>
       </div>
       <div class="windows" id="meet-windows" aria-live="polite"></div>

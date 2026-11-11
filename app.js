@@ -35,6 +35,7 @@
     sharedEndField: document.getElementById("shared-end-field"),
     meetBar: document.getElementById("meet-bar"),
     meetBarWrap: document.getElementById("meet-bar-wrap"),
+    hourGrid: document.getElementById("hour-grid"),
     barLabel: document.getElementById("bar-label"),
     barCaption: document.getElementById("bar-caption"),
     meetWindows: document.getElementById("meet-windows"),
@@ -843,6 +844,43 @@
     renderMeeting();
   }
 
+  function formatAxisHour(hour, hour12) {
+    if (!hour12) return hour === 24 ? "24" : Tz.pad2(hour);
+    const hour24 = hour === 24 ? 0 : hour;
+    const h = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    const suffix = (hour24 >= 12 && hour !== 24) ? "p" : "a";
+    return h + suffix;
+  }
+
+  function hourOffset(hour) {
+    return (hour / 24 * 100) + "%";
+  }
+
+  function renderHourAxis() {
+    const axis = els.barLabel;
+    const grid = els.hourGrid;
+    if (axis) axis.innerHTML = "";
+    if (grid) grid.innerHTML = "";
+    for (let i = 0; i <= 24; i++) {
+      const left = hourOffset(i);
+      if (grid) {
+        const tick = document.createElement("span");
+        tick.className = "hour-tick" + (i % 3 === 0 ? " hour-tick-major" : "");
+        tick.style.left = left;
+        tick.setAttribute("data-hour", String(i));
+        grid.appendChild(tick);
+      }
+      if (axis && i % 3 === 0) {
+        const lab = document.createElement("span");
+        lab.className = "axis-label" + (i % 6 === 0 ? " axis-label-coarse" : " axis-label-fine");
+        lab.style.left = left;
+        lab.setAttribute("data-hour", String(i));
+        lab.textContent = formatAxisHour(i, state.hour12);
+        axis.appendChild(lab);
+      }
+    }
+  }
+
   function formatWindowRange(startWall, endWall) {
     let text = Tz.formatTimeShort(startWall, state.hour12) + "–" + Tz.formatTimeShort(endWall, state.hour12);
     const diff = Tz.calendarDiffDays(startWall, endWall);
@@ -856,7 +894,8 @@
     const people = meetingPeople();
     els.meetBar.innerHTML = "";
     els.meetWindows.innerHTML = "";
-    els.barLabel.innerHTML = "";
+    if (els.barLabel) els.barLabel.innerHTML = "";
+    if (els.hourGrid) els.hourGrid.innerHTML = "";
     els.barCaption.textContent = "";
     els.meetCities.textContent = "";
     if (els.meetBarWrap) els.meetBarWrap.hidden = false;
@@ -899,10 +938,7 @@
     const dayStart = overlap.dayStart;
     const dayEnd = overlap.dayEnd;
     const length = dayEnd - dayStart;
-    els.barLabel.innerHTML =
-      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 0, minute: 0 }, state.hour12)) + "</span>" +
-      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 12, minute: 0 }, state.hour12)) + "</span>" +
-      "<span>" + escapeHtml(Tz.formatTimeShort({ hour: 0, minute: 0 }, state.hour12)) + "</span>";
+    renderHourAxis();
     els.barCaption.textContent = "Times shown in " + fromLabel + " time";
 
     function addLane(name, intervals, overlapLane) {
