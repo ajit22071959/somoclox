@@ -210,7 +210,7 @@
       left: 0;
       right: 0;
       top: calc(100% + 4px);
-      max-height: 240px;
+      max-height: 320px;
       overflow: auto;
       margin: 0;
       padding: 6px;
@@ -235,11 +235,20 @@
       padding: 8px 10px;
       border-radius: 8px;
       font-size: 13px;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
     }
     .combo-list [role="option"] small {
       display: block;
       color: var(--muted);
       font-size: 11px;
+    }
+    .combo-list .combo-match { color: var(--accent); }
+    .combo-list .combo-id { color: #8aa08a; }
+    .combo-list .combo-empty {
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--muted);
     }
     .combo-list [role="option"][aria-selected="true"],
     .combo-list [role="option"]:hover {

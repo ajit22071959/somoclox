@@ -410,3 +410,72 @@ describe("place labels", function () {
     );
   });
 });
+
+describe("timezone search", function () {
+  function zones(query) {
+    return Tz.searchTimeZones(query).map(function (r) { return r.timeZone; });
+  }
+
+  function first(query) {
+    const rows = Tz.searchTimeZones(query);
+    assert.ok(rows.length, "expected results for " + query);
+    return rows[0].timeZone;
+  }
+
+  function includesZone(query, zone) {
+    return Tz.searchTimeZones(query).some(function (r) {
+      return Tz.sameZone(r.timeZone, zone);
+    });
+  }
+
+  it("finds America/Chicago first for central standard time", function () {
+    assert.ok(Tz.sameZone(first("central standard time"), "America/Chicago"));
+    assert.ok(Tz.sameZone(first("Central Standard Time"), "America/Chicago"));
+  });
+
+  it("finds Asia/Colombo for sri lanka and for colombo", function () {
+    assert.ok(Tz.sameZone(first("sri lanka"), "Asia/Colombo"));
+    assert.ok(Tz.sameZone(first("Sri Lanka"), "Asia/Colombo"));
+    assert.ok(Tz.sameZone(first("colombo"), "Asia/Colombo"));
+  });
+
+  it("finds Asia/Kolkata first for indian standard time and IST", function () {
+    assert.ok(Tz.sameZone(first("indian standard time"), "Asia/Kolkata"));
+    assert.ok(Tz.sameZone(first("India Standard Time"), "Asia/Kolkata"));
+    const ist = Tz.searchTimeZones("IST");
+    assert.ok(Tz.sameZone(ist[0].timeZone, "Asia/Kolkata"));
+    assert.match(ist[0].matchLabel || "", /also used/i);
+  });
+
+  it("includes the main US zones for usa", function () {
+    ["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"].forEach(function (z) {
+      assert.ok(includesZone("usa", z), "usa should include " + z + ", got " + zones("usa").join(", "));
+    });
+  });
+
+  it("finds Europe/London for uk, london, and british summer time", function () {
+    assert.ok(Tz.sameZone(first("uk"), "Europe/London"));
+    assert.ok(Tz.sameZone(first("london"), "Europe/London"));
+    assert.ok(Tz.sameZone(first("british summer time"), "Europe/London"));
+  });
+
+  it("finds Asia/Shanghai for beijing and china", function () {
+    assert.ok(Tz.sameZone(first("beijing"), "Asia/Shanghai"));
+    assert.ok(Tz.sameZone(first("china"), "Asia/Shanghai"));
+  });
+
+  it("finds America/Sao_Paulo for sao paulo without an accent", function () {
+    assert.ok(Tz.sameZone(first("sao paulo"), "America/Sao_Paulo"));
+  });
+
+  it("finds Los Angeles for pst", function () {
+    assert.ok(Tz.sameZone(first("pst"), "America/Los_Angeles"));
+  });
+
+  it("finds a Central European zone for cet", function () {
+    const tz = first("cet");
+    assert.ok(/^Europe\//.test(tz), "expected a Europe/ zone, got " + tz);
+    const title = Tz.searchTimeZones("cet")[0].title || "";
+    assert.match(title, /Central European/i);
+  });
+});

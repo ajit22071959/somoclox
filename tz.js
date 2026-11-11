@@ -724,33 +724,755 @@
     return resolveZone(a) === resolveZone(b);
   }
 
-  function searchTimeZones(query, zones) {
-    const list = zones || listTimeZones();
-    const q = String(query || "").trim().toLowerCase();
-    if (!q) {
-      return list.map(function (z) {
-        return { timeZone: z, name: friendlyName(z), short: shortName(z) };
+  const COUNTRY_ALIASES = {
+    US: ["USA", "US", "America", "United States", "United States of America", "U.S.", "U.S.A."],
+    GB: ["UK", "U.K.", "Britain", "Great Britain", "England", "United Kingdom", "Scotland", "Wales"],
+    AE: ["UAE", "U.A.E.", "Emirates", "United Arab Emirates"],
+    KR: ["South Korea", "Korea", "Republic of Korea", "ROK"],
+    KP: ["North Korea", "DPRK"],
+    RU: ["Russia", "Russian Federation"],
+    CZ: ["Czechia", "Czech Republic"],
+    VN: ["Vietnam", "Viet Nam"],
+    NL: ["Netherlands", "Holland"],
+    CH: ["Switzerland"],
+    TR: ["Turkey", "Turkiye", "Türkiye"],
+    IR: ["Iran", "Persia"],
+    MM: ["Myanmar", "Burma"],
+    TW: ["Taiwan", "Republic of China"],
+    HK: ["Hong Kong", "Hong Kong SAR", "Hong Kong SAR China"],
+    MO: ["Macau", "Macao"],
+    CN: ["China", "PRC", "People's Republic of China"],
+    IN: ["India", "Bharat", "Hindustan"],
+    LK: ["Sri Lanka", "Ceylon"],
+    CI: ["Ivory Coast", "Cote d'Ivoire", "Côte d'Ivoire"],
+    CD: ["DR Congo", "DRC", "Democratic Republic of the Congo", "Congo-Kinshasa"],
+    CG: ["Congo-Brazzaville", "Republic of the Congo"],
+    ZA: ["South Africa"],
+    NZ: ["New Zealand"],
+    AU: ["Australia"],
+    CA: ["Canada"],
+    MX: ["Mexico"],
+    BR: ["Brazil"],
+    AR: ["Argentina"],
+    CL: ["Chile"],
+    PE: ["Peru"],
+    CO: ["Colombia"],
+    VE: ["Venezuela"],
+    EG: ["Egypt"],
+    SA: ["Saudi Arabia", "KSA"],
+    PK: ["Pakistan"],
+    BD: ["Bangladesh"],
+    NP: ["Nepal"],
+    IL: ["Israel"],
+    PS: ["Palestine"],
+    KE: ["Kenya"],
+    NG: ["Nigeria"],
+    ET: ["Ethiopia"],
+    GH: ["Ghana"],
+    MA: ["Morocco"],
+    TZ: ["Tanzania"],
+    UG: ["Uganda"],
+    UA: ["Ukraine"],
+    PL: ["Poland"],
+    GR: ["Greece"],
+    IE: ["Ireland", "Eire", "Republic of Ireland"],
+    ES: ["Spain"],
+    PT: ["Portugal"],
+    IT: ["Italy"],
+    FR: ["France"],
+    DE: ["Germany"],
+    BE: ["Belgium"],
+    AT: ["Austria"],
+    SE: ["Sweden"],
+    NO: ["Norway"],
+    DK: ["Denmark"],
+    FI: ["Finland"],
+    ID: ["Indonesia"],
+    PH: ["Philippines"],
+    TH: ["Thailand"],
+    MY: ["Malaysia"],
+    SG: ["Singapore"],
+    JP: ["Japan"],
+    KH: ["Cambodia"],
+    LA: ["Laos"],
+    MM: ["Myanmar", "Burma"],
+    BN: ["Brunei"],
+    MV: ["Maldives"],
+    AF: ["Afghanistan"],
+    IQ: ["Iraq"],
+    SY: ["Syria"],
+    JO: ["Jordan"],
+    LB: ["Lebanon"],
+    YE: ["Yemen"],
+    OM: ["Oman"],
+    QA: ["Qatar"],
+    KW: ["Kuwait"],
+    BH: ["Bahrain"],
+    BY: ["Belarus"],
+    RS: ["Serbia"],
+    HR: ["Croatia"],
+    SK: ["Slovakia"],
+    SI: ["Slovenia"],
+    BA: ["Bosnia", "Bosnia and Herzegovina"],
+    MK: ["North Macedonia", "Macedonia"],
+    HU: ["Hungary"],
+    RO: ["Romania"],
+    BG: ["Bulgaria"],
+    LT: ["Lithuania"],
+    LV: ["Latvia"],
+    EE: ["Estonia"],
+    IS: ["Iceland"],
+    LU: ["Luxembourg"],
+    MT: ["Malta"],
+    CY: ["Cyprus"],
+    GE: ["Georgia"],
+    AM: ["Armenia"],
+    AZ: ["Azerbaijan"],
+    KZ: ["Kazakhstan"],
+    UZ: ["Uzbekistan"],
+    MN: ["Mongolia"],
+    NP: ["Nepal"],
+    BT: ["Bhutan"],
+    LK: ["Sri Lanka", "Ceylon"],
+    AR: ["Argentina"],
+    UY: ["Uruguay"],
+    PY: ["Paraguay"],
+    BO: ["Bolivia"],
+    EC: ["Ecuador"],
+    CR: ["Costa Rica"],
+    PA: ["Panama"],
+    GT: ["Guatemala"],
+    CU: ["Cuba"],
+    DO: ["Dominican Republic"],
+    PR: ["Puerto Rico"],
+    JM: ["Jamaica"],
+    TT: ["Trinidad and Tobago"],
+    NZ: ["New Zealand"],
+    FJ: ["Fiji"],
+    PG: ["Papua New Guinea"],
+  };
+
+  const ABBREVIATIONS = {
+    EST: ["America/New_York"],
+    EDT: ["America/New_York"],
+    ET: ["America/New_York"],
+    CST: ["America/Chicago", "Asia/Shanghai"],
+    CDT: ["America/Chicago"],
+    CT: ["America/Chicago"],
+    MST: ["America/Denver", "America/Phoenix"],
+    MDT: ["America/Denver"],
+    MT: ["America/Denver"],
+    PST: ["America/Los_Angeles"],
+    PDT: ["America/Los_Angeles"],
+    PT: ["America/Los_Angeles"],
+    AKST: ["America/Anchorage"],
+    AKDT: ["America/Anchorage"],
+    AKT: ["America/Anchorage"],
+    HST: ["Pacific/Honolulu"],
+    GMT: ["Etc/GMT", "UTC", "Europe/London", "Atlantic/Reykjavik"],
+    UTC: ["UTC", "Etc/UTC"],
+    BST: ["Europe/London"],
+    IST: ["Asia/Kolkata", "Asia/Jerusalem", "Europe/Dublin"],
+    CET: ["Europe/Paris", "Europe/Berlin"],
+    CEST: ["Europe/Paris", "Europe/Berlin"],
+    EET: ["Europe/Athens", "Europe/Bucharest", "Europe/Helsinki"],
+    EEST: ["Europe/Athens", "Europe/Bucharest", "Europe/Helsinki"],
+    WET: ["Europe/Lisbon"],
+    WEST: ["Europe/Lisbon"],
+    JST: ["Asia/Tokyo"],
+    KST: ["Asia/Seoul"],
+    SGT: ["Asia/Singapore"],
+    HKT: ["Asia/Hong_Kong"],
+    AEST: ["Australia/Sydney"],
+    AEDT: ["Australia/Sydney"],
+    AET: ["Australia/Sydney"],
+    ACST: ["Australia/Adelaide"],
+    ACDT: ["Australia/Adelaide"],
+    AWST: ["Australia/Perth"],
+    NZST: ["Pacific/Auckland"],
+    NZDT: ["Pacific/Auckland"],
+    NZT: ["Pacific/Auckland"],
+    GST: ["Asia/Dubai"],
+    PKT: ["Asia/Karachi"],
+    NPT: ["Asia/Kathmandu"],
+    SLST: ["Asia/Colombo"],
+    BDT: ["Asia/Dhaka"],
+    MSK: ["Europe/Moscow"],
+    TRT: ["Europe/Istanbul"],
+    WAT: ["Africa/Lagos"],
+    CAT: ["Africa/Maputo"],
+    EAT: ["Africa/Nairobi"],
+    SAST: ["Africa/Johannesburg"],
+    NST: ["America/St_Johns"],
+    NDT: ["America/St_Johns"],
+    AST: ["America/Halifax", "America/Puerto_Rico", "Asia/Riyadh"],
+    ADT: ["America/Halifax"],
+    ART: ["America/Argentina/Buenos_Aires"],
+    BRT: ["America/Sao_Paulo"],
+    CLT: ["America/Santiago"],
+    PET: ["America/Lima"],
+    COT: ["America/Bogota"],
+    PHT: ["Asia/Manila"],
+    ICT: ["Asia/Bangkok"],
+    MYT: ["Asia/Kuala_Lumpur"],
+    WIB: ["Asia/Jakarta"],
+    IDT: ["Asia/Jerusalem"],
+    IRST: ["Asia/Tehran"],
+  };
+
+  const ABBREV_NOTES = {
+    IST: "IST (also used in Israel and Ireland)",
+    CST: "CST",
+  };
+
+  const CURATED_ZONE_LABELS = {
+    "Asia/Colombo": "Sri Lanka Standard Time",
+    "Asia/Kolkata": "India Standard Time",
+    "Asia/Calcutta": "India Standard Time",
+  };
+
+  const EXTRA_LONG_NAMES = {
+    "Asia/Kolkata": ["Indian Standard Time", "India Standard Time", "India Time"],
+    "Asia/Calcutta": ["Indian Standard Time", "India Standard Time", "India Time"],
+    "Asia/Colombo": ["Sri Lanka Standard Time", "Sri Lanka Time"],
+  };
+
+  const CITY_ALIASES = {
+    "Asia/Kolkata": [
+      "Delhi", "New Delhi", "Mumbai", "Bombay", "Bangalore", "Bengaluru", "Chennai",
+      "Madras", "Hyderabad", "Pune", "Ahmedabad", "Jaipur", "Lucknow", "Surat",
+      "Kanpur", "Nagpur", "Indore", "Bhopal", "Patna", "Chandigarh", "Kochi",
+      "Cochin", "Thiruvananthapuram", "Trivandrum", "Visakhapatnam", "Vadodara",
+      "Ludhiana", "Agra", "Nashik", "Faridabad", "Meerut", "Rajkot", "Varanasi",
+      "Srinagar", "Amritsar", "Gurgaon", "Gurugram", "Noida", "Ghaziabad",
+      "Mysore", "Mysuru", "Coimbatore", "Madurai", "Ranchi", "Bhubaneswar",
+      "Guwahati", "Dehradun", "Navi Mumbai", "Thane", "Howrah", "Jodhpur",
+      "Raipur", "Allahabad", "Prayagraj", "Vijayawada", "Tiruchirappalli",
+    ],
+    "Asia/Shanghai": [
+      "Beijing", "Peking", "Guangzhou", "Shenzhen", "Chengdu", "Chongqing",
+      "Wuhan", "Hangzhou", "Nanjing", "Tianjin", "Suzhou", "Dongguan",
+      "Qingdao", "Dalian", "Xi'an", "Xian", "Ningbo", "Foshan", "Hefei",
+      "Changsha", "Zhengzhou", "Shenyang", "Harbin", "Fuzhou", "Xiamen",
+      "Jinan", "Kunming", "Nanning",
+    ],
+    "America/New_York": [
+      "Boston", "Washington", "Washington DC", "DC", "Philadelphia", "Miami",
+      "Atlanta", "Detroit", "Baltimore", "Charlotte", "Orlando", "Tampa",
+      "Pittsburgh", "Cleveland", "Cincinnati", "Buffalo", "Newark", "Raleigh",
+      "Richmond", "Jacksonville", "Columbus", "Brooklyn", "Manhattan", "NYC",
+      "Philadelphia", "Hartford", "Providence", "Albany", "Rochester",
+      "Syracuse", "Savannah", "Charleston", "Knoxville", "Virginia Beach",
+    ],
+    "America/Chicago": [
+      "Dallas", "Houston", "Austin", "San Antonio", "Minneapolis", "St Louis",
+      "Saint Louis", "Kansas City", "Milwaukee", "New Orleans", "Nashville",
+      "Memphis", "Oklahoma City", "Omaha", "Tulsa", "Wichita", "St Paul",
+      "Fort Worth", "Arlington", "Madison", "Des Moines", "Little Rock",
+      "Baton Rouge", "Birmingham", "Jackson",
+    ],
+    "America/Denver": [
+      "Salt Lake City", "Albuquerque", "Colorado Springs", "Boise",
+      "Fort Collins", "Boulder", "Santa Fe", "Billings",
+    ],
+    "America/Phoenix": ["Phoenix", "Tucson", "Scottsdale", "Mesa", "Tempe"],
+    "America/Los_Angeles": [
+      "San Francisco", "SF", "Seattle", "Portland", "San Diego", "Sacramento",
+      "San Jose", "Oakland", "Las Vegas", "Fresno", "Long Beach", "Anaheim",
+      "Irvine", "Santa Monica", "Palo Alto", "Berkeley", "Spokane", "Tacoma",
+      "Reno",
+    ],
+    "America/Anchorage": ["Anchorage", "Fairbanks", "Juneau"],
+    "Pacific/Honolulu": ["Honolulu", "Maui", "Hawaii"],
+    "America/Toronto": ["Montreal", "Ottawa", "Quebec", "Quebec City"],
+    "America/Vancouver": ["Victoria"],
+    "America/Edmonton": ["Calgary"],
+    "Asia/Tokyo": ["Osaka", "Kyoto", "Yokohama", "Nagoya", "Sapporo", "Fukuoka", "Kobe", "Kawasaki", "Hiroshima", "Sendai"],
+    "Asia/Seoul": ["Busan", "Pusan", "Incheon", "Daegu"],
+    "Australia/Sydney": ["Canberra", "Newcastle"],
+    "Australia/Melbourne": ["Melbourne"],
+    "Australia/Brisbane": ["Gold Coast"],
+    "Asia/Dubai": ["Abu Dhabi", "Sharjah", "Ajman"],
+    "Asia/Riyadh": ["Jeddah", "Mecca", "Makkah", "Medina", "Dammam"],
+    "Asia/Qatar": ["Doha"],
+    "Asia/Kuwait": ["Kuwait City"],
+    "Asia/Bahrain": ["Manama"],
+    "Asia/Muscat": ["Muscat"],
+    "Europe/Berlin": ["Frankfurt", "Munich", "Hamburg", "Cologne", "Koln", "Köln", "Dusseldorf", "Stuttgart"],
+    "Europe/Madrid": ["Barcelona", "Valencia", "Seville"],
+    "Europe/Rome": ["Milan", "Naples", "Turin", "Florence"],
+    "Europe/Paris": ["Lyon", "Marseille", "Toulouse", "Nice"],
+    "Europe/London": [
+      "Birmingham", "Manchester", "Edinburgh", "Glasgow", "Liverpool",
+      "Leeds", "Bristol", "Cardiff", "Belfast",
+    ],
+    "Europe/Amsterdam": ["Rotterdam", "The Hague"],
+    "Europe/Zurich": ["Geneva", "Basel", "Bern"],
+    "Europe/Brussels": ["Antwerp"],
+    "Europe/Lisbon": ["Porto"],
+    "Europe/Warsaw": ["Krakow", "Gdansk"],
+    "Europe/Vienna": ["Salzburg"],
+    "Europe/Stockholm": ["Gothenburg"],
+    "Europe/Oslo": ["Bergen"],
+    "Asia/Ho_Chi_Minh": ["Ho Chi Minh City", "Saigon", "Hanoi"],
+    "Asia/Phnom_Penh": ["Phnom Penh"],
+    "Asia/Yangon": ["Yangon", "Rangoon"],
+    "Asia/Jakarta": ["Bandung", "Surabaya"],
+    "Asia/Manila": ["Cebu"],
+    "Asia/Kuala_Lumpur": ["George Town", "Johor Bahru", "Penang"],
+    "Asia/Karachi": ["Lahore", "Islamabad", "Rawalpindi", "Faisalabad"],
+    "Asia/Dhaka": ["Chittagong"],
+    "Asia/Kathmandu": ["Kathmandu", "Pokhara"],
+    "Asia/Colombo": ["Colombo"],
+    "Africa/Johannesburg": ["Cape Town", "Durban", "Pretoria"],
+    "Africa/Accra": ["Accra"],
+    "Africa/Addis_Ababa": ["Addis Ababa"],
+    "Africa/Casablanca": ["Casablanca"],
+    "Africa/Tunis": ["Tunis"],
+    "Africa/Algiers": ["Algiers"],
+    "Africa/Kampala": ["Kampala"],
+    "Africa/Dar_es_Salaam": ["Dar es Salaam"],
+    "Africa/Nairobi": ["Nairobi"],
+    "Africa/Lagos": ["Lagos"],
+    "Africa/Cairo": ["Cairo"],
+    "America/Sao_Paulo": ["Rio de Janeiro", "Brasilia", "Salvador", "Belo Horizonte", "Recife", "Porto Alegre"],
+    "America/Mexico_City": ["Guadalajara", "Monterrey", "Puebla", "Mexico City"],
+    "America/Bogota": ["Medellin", "Cali", "Bogota", "Bogotá"],
+    "America/Guayaquil": ["Quito", "Guayaquil"],
+    "America/Argentina/Buenos_Aires": ["Buenos Aires"],
+    "America/Lima": ["Lima"],
+    "America/Santiago": ["Santiago"],
+    "America/Montevideo": ["Montevideo"],
+    "America/Caracas": ["Caracas"],
+    "America/Panama": ["Panama City"],
+    "America/Puerto_Rico": ["San Juan"],
+    "America/Havana": ["Havana"],
+    "America/Costa_Rica": ["San Jose"],
+    "America/Guatemala": ["Guatemala City"],
+    "Asia/Jerusalem": ["Tel Aviv", "Jerusalem"],
+    "Asia/Beirut": ["Beirut"],
+    "Asia/Amman": ["Amman"],
+    "Asia/Baghdad": ["Baghdad"],
+    "Asia/Tehran": ["Tehran"],
+    "Europe/Istanbul": ["Istanbul"],
+    "Europe/Moscow": ["Moscow"],
+    "Pacific/Auckland": ["Wellington", "Christchurch", "Auckland"],
+  };
+
+  const ZONE_PRIORITY = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "Pacific/Honolulu",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "Asia/Kolkata",
+    "Asia/Calcutta",
+    "Asia/Shanghai",
+    "Asia/Tokyo",
+    "Asia/Seoul",
+    "Asia/Dubai",
+    "Australia/Sydney",
+    "Pacific/Auckland",
+    "America/Toronto",
+    "America/Sao_Paulo",
+    "Asia/Singapore",
+    "Asia/Hong_Kong",
+    "Asia/Colombo",
+    "Europe/Amsterdam",
+    "Europe/Rome",
+    "Europe/Madrid",
+    "Europe/Zurich",
+    "Europe/Athens",
+    "Europe/Moscow",
+    "Europe/Istanbul",
+    "Europe/Dublin",
+    "Asia/Jerusalem",
+    "UTC",
+    "Etc/UTC",
+  ];
+
+  const SEARCH_LIMIT = 12;
+
+  let cachedSearchIndex = null;
+
+  function normalizeSearch(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function searchTokens(value) {
+    const n = normalizeSearch(value);
+    return n ? n.split(" ") : [];
+  }
+
+  function uniqueStrings(values) {
+    const out = [];
+    const seen = {};
+    for (let i = 0; i < values.length; i++) {
+      const raw = values[i];
+      if (!raw) continue;
+      const key = normalizeSearch(raw);
+      if (!key || seen[key]) continue;
+      seen[key] = true;
+      out.push(String(raw));
+    }
+    return out;
+  }
+
+  function zonePriority(timeZone) {
+    const resolved = resolveZone(timeZone);
+    const preferred = preferredZone(timeZone);
+    let best = 5000;
+    for (let i = 0; i < ZONE_PRIORITY.length; i++) {
+      if (sameZone(ZONE_PRIORITY[i], resolved) || ZONE_PRIORITY[i] === timeZone || ZONE_PRIORITY[i] === preferred) {
+        if (i < best) best = i;
+      }
+    }
+    return best;
+  }
+
+  function uniqueSearchZones() {
+    const raw = listTimeZones();
+    const out = [];
+    for (let i = 0; i < raw.length; i++) {
+      const resolved = resolveZone(raw[i]);
+      let seen = false;
+      for (let j = 0; j < out.length; j++) {
+        if (sameZone(out[j], resolved)) { seen = true; break; }
+      }
+      if (!seen) out.push(resolved);
+    }
+    if (!out.some(function (z) { return z === "UTC" || z === "Etc/UTC"; })) {
+      out.push("UTC");
+    }
+    return out;
+  }
+
+  function intlNameAt(timeZone, instant, style) {
+    try {
+      const parts = new Intl.DateTimeFormat("en", {
+        timeZone: timeZone,
+        timeZoneName: style,
+        hour: "numeric",
+      }).formatToParts(new Date(instant));
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].type === "timeZoneName") return parts[i].value;
+      }
+    } catch (err) {
+      return "";
+    }
+    return "";
+  }
+
+  function harvestIntlNames(timeZone) {
+    const instants = [Date.UTC(2026, 0, 15, 12), Date.UTC(2026, 6, 15, 12)];
+    const styles = ["long", "longGeneric", "shortGeneric", "short"];
+    const longs = [];
+    const shorts = [];
+    for (let i = 0; i < instants.length; i++) {
+      for (let s = 0; s < styles.length; s++) {
+        const value = intlNameAt(timeZone, instants[i], styles[s]);
+        if (!value) continue;
+        if (isOffsetStyleName(value)) continue;
+        if (styles[s] === "short") shorts.push(value);
+        else longs.push(value);
+      }
+    }
+    const uniqueLongs = uniqueStrings(longs);
+    uniqueLongs.slice().forEach(function (name) {
+      const generic = name
+        .replace(/ Standard Time$/i, " Time")
+        .replace(/ Daylight Time$/i, " Time")
+        .replace(/ Summer Time$/i, " Time");
+      if (generic !== name) uniqueLongs.push(generic);
+    });
+    return { longs: uniqueStrings(uniqueLongs), shorts: uniqueStrings(shorts) };
+  }
+
+  function ianaCityName(timeZone) {
+    if (!timeZone || timeZone === "UTC" || timeZone.indexOf("/") === -1) {
+      return timeZone === "UTC" || timeZone === "Etc/UTC" ? "UTC" : (timeZone || "");
+    }
+    return timeZone.split("/").pop().replace(/_/g, " ");
+  }
+
+  function countryAliasList(code) {
+    const names = [];
+    if (code) {
+      names.push(countryDisplayName(code), code);
+      const extra = COUNTRY_ALIASES[code];
+      if (extra) {
+        for (let i = 0; i < extra.length; i++) names.push(extra[i]);
+      }
+    }
+    return uniqueStrings(names);
+  }
+
+  function buildSearchIndex() {
+    if (cachedSearchIndex) return cachedSearchIndex;
+    const zones = uniqueSearchZones();
+    const countryCounts = {};
+    const entries = [];
+
+    for (let i = 0; i < zones.length; i++) {
+      const timeZone = zones[i];
+      const code = countryCodeForZone(timeZone);
+      if (code) countryCounts[code] = (countryCounts[code] || 0) + 1;
+    }
+    // Treat legacy aliases of the same zone as one country zone.
+    // uniqueSearchZones already deduped, so counts are unique zones.
+
+    for (let i = 0; i < zones.length; i++) {
+      const timeZone = zones[i];
+      const code = countryCodeForZone(timeZone);
+      const country = code ? countryDisplayName(code) : "";
+      const city = ianaCityName(timeZone);
+      const harvested = harvestIntlNames(timeZone);
+      const curatedLabel = CURATED_ZONE_LABELS[timeZone] || CURATED_ZONE_LABELS[preferredZone(timeZone)] || "";
+      const extraLong = EXTRA_LONG_NAMES[timeZone] || EXTRA_LONG_NAMES[preferredZone(timeZone)] || [];
+      const countryName = country;
+      const longNames = uniqueStrings(
+        harvested.longs.concat(extraLong).concat(curatedLabel ? [curatedLabel] : []).filter(function (n) {
+          const nn = normalizeSearch(n);
+          const cn = normalizeSearch(countryName);
+          if (!cn) return true;
+          if (nn.indexOf(cn) !== -1) return true;
+          // Drop another country's standard name, e.g. "India Standard Time" on Colombo.
+          if (/^(india|indian)( standard)? time$/.test(nn) && cn !== "india") return false;
+          return true;
+        })
+      );
+      const cities = uniqueStrings(
+        [city, shortName(timeZone)].concat(CITY_ALIASES[timeZone] || [], CITY_ALIASES[preferredZone(timeZone)] || [])
+      );
+      const countryNames = countryAliasList(code);
+      const abbrevs = [];
+      Object.keys(ABBREVIATIONS).forEach(function (abbr) {
+        const list = ABBREVIATIONS[abbr];
+        for (let a = 0; a < list.length; a++) {
+          if (sameZone(list[a], timeZone)) {
+            abbrevs.push(abbr);
+            break;
+          }
+        }
+      });
+      harvested.shorts.forEach(function (s) { abbrevs.push(s); });
+
+      const generic = (function () {
+        function isWeakCountryLabel(n) {
+          if (!country) return false;
+          const nn = normalizeSearch(n);
+          const cn = normalizeSearch(country);
+          return nn === cn + " time" || nn === cn + " standard time";
+        }
+        if (curatedLabel) return curatedLabel;
+        const strong = longNames.filter(function (n) { return !isWeakCountryLabel(n); });
+        const genericLike = strong.filter(function (n) {
+          return / Time$/i.test(n) && !/ (Standard|Daylight|Summer) Time$/i.test(n);
+        });
+        if (genericLike.length) return genericLike[0];
+        if (strong.length) return strong[0];
+        return longNames[0] || "";
+      })();
+
+      const multi = !!(code && countryCounts[code] > 1);
+      let title;
+      if (country && multi && generic) {
+        title = country + " · " + generic + " (" + city + ")";
+      } else if (country && (curatedLabel || generic)) {
+        title = country + " · " + (curatedLabel || generic);
+      } else if (generic) {
+        title = generic;
+      } else {
+        title = friendlyName(timeZone);
+      }
+
+      const terms = uniqueStrings(
+        longNames.concat(cities, countryNames, abbrevs, [timeZone.replace(/_/g, " "), title, curatedLabel])
+          .concat(aliasesFor(timeZone))
+      );
+
+      entries.push({
+        timeZone: timeZone,
+        city: city,
+        countryCode: code || "",
+        country: country,
+        title: title,
+        generic: generic,
+        longNames: longNames,
+        cities: cities,
+        countryNames: countryNames,
+        abbrevs: uniqueStrings(abbrevs),
+        terms: terms,
+        termNorms: terms.map(normalizeSearch),
+        titleNorm: normalizeSearch(title),
+        priority: zonePriority(timeZone),
+        multi: multi,
       });
     }
-    const scored = [];
-    for (let i = 0; i < list.length; i++) {
-      const z = list[i];
-      const name = friendlyName(z);
-      const short = shortName(z);
-      const hay = (z + " " + name + " " + short + " " + aliasesFor(z).join(" ")).toLowerCase();
-      let score = -1;
-      if (short.toLowerCase() === q || name.toLowerCase() === q || z.toLowerCase() === q) score = 0;
-      else if (short.toLowerCase().indexOf(q) === 0) score = 1;
-      else if (name.toLowerCase().indexOf(q) === 0) score = 2;
-      else if (hay.indexOf(q) !== -1) score = 3;
-      if (score >= 0) scored.push({ timeZone: z, name: name, short: short, score: score });
+
+    cachedSearchIndex = entries;
+    return entries;
+  }
+
+  function isAbbrevQuery(queryNorm) {
+    if (!queryNorm || queryNorm.indexOf(" ") !== -1) return false;
+    return !!ABBREVIATIONS[queryNorm.toUpperCase()];
+  }
+
+  function hasWholeWord(field, needle) {
+    const words = field.split(" ");
+    for (let i = 0; i < words.length; i++) {
+      if (words[i] === needle) return true;
     }
+    return false;
+  }
+
+  function bestFieldScore(entry, queryNorm, queryWords) {
+    let best = 99;
+    let matched = "";
+    const terms = entry.terms;
+    const norms = entry.termNorms;
+    const abbrevOnly = isAbbrevQuery(queryNorm);
+    for (let i = 0; i < norms.length; i++) {
+      const field = norms[i];
+      if (!field) continue;
+      let score = -1;
+      if (abbrevOnly) {
+        if (field === queryNorm) score = 0;
+      } else if (field === queryNorm) {
+        score = 0;
+      } else if (queryNorm.length >= 3 && (field === queryNorm || field.indexOf(queryNorm + " ") === 0 || field.indexOf(queryNorm) === 0)) {
+        score = 1;
+      } else {
+        const words = field.split(" ");
+        const allWordPrefix = queryWords.every(function (qw) {
+          return words.some(function (w) { return w === qw || (qw.length >= 3 && w.indexOf(qw) === 0); });
+        });
+        if (allWordPrefix && queryWords.length) {
+          const allExactWords = queryWords.every(function (qw) { return words.indexOf(qw) !== -1; });
+          score = allExactWords && queryWords.length > 1 ? 1 : 2;
+        } else if (queryNorm.length >= 4 && hasWholeWord(field, queryNorm)) {
+          score = 3;
+        } else if (queryNorm.length >= 4 && queryWords.every(function (qw) { return hasWholeWord(field, qw); })) {
+          score = 4;
+        }
+      }
+      if (score >= 0 && score < best) {
+        best = score;
+        matched = terms[i];
+        if (best === 0) break;
+      }
+    }
+    if (best === 99) return null;
+    return { score: best, matched: matched };
+  }
+
+  function abbreviationBoost(entry, queryNorm) {
+    const q = queryNorm.toUpperCase().replace(/\s+/g, "");
+    if (!q) return 0;
+    for (let i = 0; i < entry.abbrevs.length; i++) {
+      if (normalizeSearch(entry.abbrevs[i]).replace(/\s+/g, "") === queryNorm) {
+        const canon = ABBREVIATIONS[entry.abbrevs[i].toUpperCase()] || ABBREVIATIONS[q];
+        if (canon) {
+          for (let c = 0; c < canon.length; c++) {
+            if (sameZone(canon[c], entry.timeZone)) return c;
+          }
+        }
+        return 10;
+      }
+    }
+    return 20;
+  }
+
+  function matchNote(entry, matched, queryNorm) {
+    if (!matched) return "";
+    const q = queryNorm.toUpperCase().replace(/\s+/g, "");
+    if (q === "IST" && sameZone(entry.timeZone, "Asia/Kolkata")) {
+      return "matches: IST (also used in Israel and Ireland)";
+    }
+    if (q === "CST" && sameZone(entry.timeZone, "Asia/Shanghai")) {
+      return "matches: CST (China Standard Time)";
+    }
+    if (q === "CST" && sameZone(entry.timeZone, "America/Chicago")) {
+      return "matches: CST (Central Standard Time)";
+    }
+    const titleNorm = entry.titleNorm;
+    const matchedNorm = normalizeSearch(matched);
+    if (!matchedNorm) return "";
+    if (titleNorm === matchedNorm || titleNorm.indexOf(matchedNorm) !== -1) return "";
+    for (let i = 0; i < entry.countryNames.length; i++) {
+      if (normalizeSearch(entry.countryNames[i]) === matchedNorm) return "";
+    }
+    return "matches: " + matched;
+  }
+
+  function searchTimeZones(query, zones) {
+    const list = zones || null;
+    const q = String(query || "").trim();
+    const index = buildSearchIndex();
+    let pool = index;
+    if (list && list.length) {
+      pool = index.filter(function (entry) {
+        return list.some(function (z) { return sameZone(z, entry.timeZone); });
+      });
+    }
+
+    if (!q) {
+      return pool.slice().sort(function (a, b) {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return a.title.localeCompare(b.title);
+      }).slice(0, SEARCH_LIMIT).map(function (entry) {
+        return {
+          timeZone: entry.timeZone,
+          name: entry.title,
+          title: entry.title,
+          short: shortName(entry.timeZone),
+          matchLabel: "",
+          score: 0,
+        };
+      });
+    }
+
+    const queryNorm = normalizeSearch(q);
+    const queryWords = searchTokens(q);
+    if (!queryNorm) return [];
+
+    const scored = [];
+    for (let i = 0; i < pool.length; i++) {
+      const entry = pool[i];
+      const hit = bestFieldScore(entry, queryNorm, queryWords);
+      if (!hit) continue;
+      scored.push({
+        timeZone: entry.timeZone,
+        name: entry.title,
+        title: entry.title,
+        short: shortName(entry.timeZone),
+        matchLabel: matchNote(entry, hit.matched, queryNorm),
+        score: hit.score,
+        priority: entry.priority,
+        abbrevBoost: abbreviationBoost(entry, queryNorm),
+      });
+    }
+
     scored.sort(function (a, b) {
       if (a.score !== b.score) return a.score - b.score;
-      return a.name.localeCompare(b.name);
+      if (a.abbrevBoost !== b.abbrevBoost) return a.abbrevBoost - b.abbrevBoost;
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.title.localeCompare(b.title);
     });
-    return scored;
+    return scored.slice(0, SEARCH_LIMIT);
   }
+
 
   function formatTime(wall, hour12) {
     const min = pad2(wall.minute);

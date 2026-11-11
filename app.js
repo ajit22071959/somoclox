@@ -376,10 +376,17 @@
     }
 
     function open(rows) {
-      items = rows.slice(0, 10);
+      items = rows.slice(0, 12);
       list.innerHTML = "";
       if (!items.length) {
-        close();
+        const empty = document.createElement("li");
+        empty.className = "combo-empty";
+        empty.textContent = "No matching timezones";
+        list.appendChild(empty);
+        list.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+        input.removeAttribute("aria-activedescendant");
+        active = -1;
         return;
       }
       items.forEach(function (row, i) {
@@ -389,7 +396,9 @@
         btn.setAttribute("role", "option");
         btn.id = list.id + "-opt-" + i;
         btn.setAttribute("aria-selected", "false");
-        btn.innerHTML = escapeHtml(row.name) + "<small>" + escapeHtml(row.timeZone) + "</small>";
+        const label = row.title || row.name;
+        const match = row.matchLabel ? "<small class=\"combo-match\">" + escapeHtml(row.matchLabel) + "</small>" : "";
+        btn.innerHTML = escapeHtml(label) + match + "<small class=\"combo-id\">" + escapeHtml(row.timeZone) + "</small>";
         btn.addEventListener("mousedown", function (e) { e.preventDefault(); });
         btn.addEventListener("click", function () { pick(row); });
         li.appendChild(btn);
@@ -415,7 +424,7 @@
 
     function pick(row) {
       onPick(row.timeZone, row);
-      if (opts.keepValue) input.value = row.name;
+      if (opts.keepValue) input.value = row.title || row.name;
       else input.value = "";
       close();
     }
@@ -767,4 +776,8 @@
   renderConverter();
   renderMeeting();
   setInterval(tick, 1000);
+  setTimeout(function () {
+    try { Tz.searchTimeZones(" "); } catch (err) {}
+  }, 0);
 })();
+
