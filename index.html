@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101715">
+  <meta name="description" content="See the time in several timezones, convert a time from one to another, and find a meeting hour that works for everyone.">
+  <title>somoclox — Every clock, one glance.</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #edf2e7;
+      --muted: #b0bdaf;
+      --accent: #b0d6af;
+      --paper: #19221d;
+      --line: #425747;
+      --tint: #25382c;
+      --shadow: 0 22px 65px #00000035;
+    }
+    * { box-sizing: border-box; }
+    html { background: #101715; }
+    body {
+      margin: 0;
+      background: #101715;
+      background-image:
+        radial-gradient(ellipse at 15% 0%, #1e3025 0, transparent 60%),
+        radial-gradient(ellipse at 100% 100%, #192822 0, transparent 55%);
+      background-attachment: fixed;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      min-height: 100svh;
+      line-height: 1.5;
+    }
+    button, input, select { font: inherit; }
+    button {
+      cursor: pointer;
+      transition: background .18s, transform .18s, border-color .18s, filter .18s;
+    }
+    button:active { transform: translateY(1px); }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    a:focus-visible {
+      outline: 3px solid #e8bc7b;
+      outline-offset: 4px;
+    }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .55;
+      transform: none;
+    }
+    ::selection { background: #597b58; color: #fff; }
+    input::selection { background: #597b58; color: #fff; }
+
+    .shell { max-width: 1080px; margin: auto; padding: 35px 28px 24px; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px 20px;
+      margin-bottom: 28px;
+    }
+    .brand {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: 35px;
+      font-weight: 700;
+      letter-spacing: -1px;
+    }
+    .brandmark {
+      width: 78px;
+      height: 78px;
+      border-radius: 18px;
+      flex: 0 0 auto;
+    }
+    .brand-name { margin: 0; padding: 0; }
+    .brand small {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      font-weight: 500;
+      margin-left: 4px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .seg {
+      display: flex;
+      background: #101a14;
+      border: 1px solid #354b3a;
+      border-radius: 12px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .seg button {
+      border: 1px solid transparent;
+      background: none;
+      color: var(--muted);
+      border-radius: 9px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .seg button:hover { background: #24372a; color: var(--ink); }
+    .seg button[aria-pressed="true"] {
+      background: var(--tint);
+      border-color: #526e58;
+      color: var(--ink);
+    }
+
+    .you {
+      text-align: center;
+      margin: 0 auto 28px;
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      margin: 0 0 6px;
+    }
+    .you-city {
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 400;
+      font-size: clamp(26px, 5vw, 34px);
+      letter-spacing: -1px;
+      margin: 0 0 4px;
+      color: #f1f2e6;
+    }
+    .you-time {
+      font-size: clamp(48px, 10vw, 76px);
+      font-weight: 450;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -3px;
+      line-height: 1.15;
+      color: #f2f5e9;
+      margin: 0;
+    }
+    .you-meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 8px 0 0;
+    }
+    .you-meta .dst { color: var(--accent); }
+
+    .panel {
+      background: linear-gradient(145deg, #1c2820, var(--paper) 65%);
+      border: 1px solid #3b5040;
+      border-radius: 24px;
+      box-shadow: var(--shadow), inset 0 1px 0 #ffffff05;
+      padding: 24px 24px 22px;
+      margin: 0 auto 22px;
+    }
+    .panel h2 {
+      margin: 0 0 6px;
+      font-size: 16px;
+      color: #e9f0e4;
+    }
+    .lead {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0 0 18px;
+      line-height: 1.5;
+    }
+
+    .add-row {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 14px;
+    }
+    .add-row label,
+    .field label {
+      font-size: 12px;
+      color: #c0ceba;
+    }
+    .combo { position: relative; }
+    input[type="search"],
+    input[type="text"],
+    input[type="date"],
+    input[type="time"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #59705c;
+      background: #0f1913;
+      border-radius: 9px;
+      color: #edf4e7;
+      box-shadow: inset 0 2px 5px #00000024;
+    }
+    input:hover, select:hover { border-color: #8ea68a; }
+    .combo-list {
+      position: absolute;
+      z-index: 20;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      max-height: 240px;
+      overflow: auto;
+      margin: 0;
+      padding: 6px;
+      list-style: none;
+      background: #152019;
+      border: 1px solid #3b5040;
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+    .combo-list[hidden] { display: none; }
+    .combo-list li {
+      margin: 0;
+      border-radius: 8px;
+    }
+    .combo-list [role="option"] {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: none;
+      color: var(--ink);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .combo-list [role="option"] small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .combo-list [role="option"][aria-selected="true"],
+    .combo-list [role="option"]:hover {
+      background: #24372a;
+    }
+
+    .favs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 16px;
+    }
+    .favs:empty { display: none; }
+    .chip {
+      border: 1px solid #58705d;
+      background: #1c2b21;
+      border-radius: 999px;
+      color: #dcebd6;
+      font-size: 12px;
+      font-weight: 650;
+      padding: 6px 12px;
+    }
+    .chip:hover { background: #2c4132; border-color: #88a88a; }
+
+    .clock-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .clock-card {
+      background: #121c16;
+      border: 1px solid #3b5040;
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      min-width: 0;
+    }
+    .clock-card.you-card { border-color: #5d7a5e; }
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .card-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-weight: 650;
+      font-size: 14px;
+      color: #e9f0e4;
+      overflow-wrap: anywhere;
+    }
+    .you-badge {
+      display: inline-block;
+      margin-left: 6px;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #102018;
+      background: var(--accent);
+      border-radius: 999px;
+      padding: 1px 6px;
+      font-weight: 700;
+      vertical-align: 1px;
+    }
+    .icon-btn {
+      flex: 0 0 30px;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #8aa889;
+      background: #1c2f23;
+      color: var(--accent);
+      border-radius: 8px;
+      padding: 0;
+    }
+    .icon-btn:hover { background: #2c4132; border-color: #b0d6af; }
+    .icon-btn[aria-pressed="true"] { background: #2c4132; color: #e8bc7b; border-color: #c4b07a; }
+    .icon-btn svg { display: block; }
+    .card-time {
+      font-size: 26px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -1px;
+      font-weight: 550;
+      color: #f2f5e9;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .card-date, .card-off {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+    .card-off .dst { color: var(--accent); }
+    .card-warn {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #e8bc7b;
+      line-height: 1.45;
+    }
+    .empty {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .dst-notes {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .notice, .warn, .form-errors {
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .notice {
+      background: #1a2a22;
+      border: 1px solid #3b5040;
+      color: #dbe7d6;
+    }
+    .warn, .form-errors {
+      background: #2a2418;
+      border: 1px solid #6a5a3a;
+      color: #f0e0c0;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+    .field { min-width: 0; }
+    .field .combo { margin-top: 7px; }
+    .field input, .field select { margin-top: 7px; display: block; }
+    .targets { margin-top: 14px; }
+    .target-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 0;
+    }
+    .target-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #58705d;
+      background: #1c2b21;
+      border-radius: 999px;
+      color: #dcebd6;
+      font-size: 12px;
+      font-weight: 650;
+      padding: 6px 8px 6px 12px;
+    }
+    .target-chip button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0 4px;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .target-chip button:hover { color: #f0e0c0; }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 16px;
+    }
+    .primary {
+      min-width: 148px;
+      background: var(--accent);
+      border: 1px solid transparent;
+      border-radius: 15px;
+      color: #102018;
+      font-weight: 700;
+      padding: 13px 22px;
+      box-shadow: 0 5px 20px #00000020;
+    }
+    .primary:hover:not(:disabled) { filter: brightness(1.09); }
+    .secondary, .ghost {
+      border: 1px solid #58705d;
+      background: #1c2b21;
+      border-radius: 12px;
+      color: #dcebd6;
+      font-size: 13px;
+      font-weight: 650;
+      padding: 12px 16px;
+    }
+    .secondary:hover:not(:disabled),
+    .ghost:hover { background: #2c4132; border-color: #88a88a; }
+
+    .results { margin-top: 18px; display: grid; gap: 10px; }
+    .result-card {
+      background: #121c16;
+      border: 1px solid #3b5040;
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    .result-card .when {
+      font-size: clamp(22px, 4vw, 28px);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -1px;
+      font-weight: 550;
+      color: #f2f5e9;
+      margin: 0 0 4px;
+      overflow-wrap: anywhere;
+    }
+    .result-card .where {
+      font-size: 14px;
+      font-weight: 650;
+      color: #e9f0e4;
+    }
+    .result-card p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .result-card .shift { color: #e8bc7b; }
+    .alt-list {
+      margin: 8px 0 0;
+      padding-left: 1.15em;
+      font-size: 13px;
+      color: #dbe7d6;
+    }
+
+    .meet-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .bar-wrap { margin-top: 8px; }
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .bar {
+      position: relative;
+      height: 28px;
+      background: #0f1913;
+      border: 1px solid #3b5040;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-seg {
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      background: #b0d6af;
+      border-radius: 999px;
+    }
+    .bar-caption {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 6px 0 0;
+    }
+    .windows { margin: 14px 0 0; display: grid; gap: 10px; }
+    .window-card {
+      background: #121c16;
+      border: 1px solid #3b5040;
+      border-radius: 14px;
+      padding: 12px 14px;
+    }
+    .window-card h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: var(--accent);
+    }
+    .window-card ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: 13px;
+      color: #dbe7d6;
+    }
+    .window-card li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 3px 0;
+      overflow-wrap: anywhere;
+    }
+    .window-card .city { font-weight: 650; min-width: 0; }
+
+    .copy-status {
+      font-size: 12px;
+      color: var(--accent);
+      min-height: 1.2em;
+      margin: 0 0 8px;
+    }
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: #a2b09b;
+      margin: 20px 0 0;
+      letter-spacing: .3px;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 900px) {
+      .clock-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .form-grid, .meet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 800px) {
+      .shell { padding: 24px 16px 20px; }
+      header { margin-bottom: 20px; }
+    }
+    @media (max-width: 520px) {
+      .brand small { display: none; }
+      .brand { font-size: 28px; gap: 12px; }
+      .brandmark { width: 60px; height: 60px; border-radius: 14px; }
+      .clock-grid, .form-grid, .meet-grid { grid-template-columns: 1fr; }
+      .you-time { letter-spacing: -2px; }
+      .primary, .actions .secondary, .ghost { width: 100%; }
+      .actions { flex-direction: column; align-items: stretch; }
+      .toolbar { width: 100%; justify-content: space-between; }
+      .toolbar .secondary { width: auto; padding: 8px 14px; }
+      .card-time { font-size: 24px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <img class="brandmark" src="logo.png" alt="" width="78" height="78">
+        <span class="brand-name">somoclox</span>
+        <small>Every clock, one glance.</small>
+      </div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Time format">
+          <button type="button" id="fmt-24" aria-pressed="true">24h</button>
+          <button type="button" id="fmt-12" aria-pressed="false">12h</button>
+        </div>
+        <button type="button" class="secondary" id="copy-link">Copy link</button>
+      </div>
+    </header>
+    <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
+
+    <section class="you" aria-labelledby="you-heading">
+      <p class="eyebrow">Your time</p>
+      <h1 class="you-city" id="you-heading">Your timezone</h1>
+      <p class="you-time" id="you-time">--:--:--</p>
+      <p class="you-meta" id="you-meta"></p>
+    </section>
+
+    <section class="panel" aria-labelledby="compare-heading">
+      <h2 id="compare-heading">Compare cities</h2>
+      <p class="lead">Add any timezone to the grid. Star a city to keep it in your favourites on this device.</p>
+      <div class="add-row">
+        <label for="zone-search">Add a timezone</label>
+        <div class="combo" data-combo="add">
+          <input id="zone-search" type="search" autocomplete="off" placeholder="Type a city or zone, for example London or Tokyo" aria-autocomplete="list" aria-controls="zone-list" aria-expanded="false">
+          <ul class="combo-list" id="zone-list" role="listbox" hidden></ul>
+        </div>
+      </div>
+      <div class="favs" id="favs"></div>
+      <div class="clock-grid" id="clock-grid"></div>
+      <div class="dst-notes" id="dst-notes"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="convert-heading">
+      <h2 id="convert-heading">Convert a time</h2>
+      <p class="lead">Enter a date and time in one timezone and see it in one or more others, including the day shift and how far ahead or behind it is. Daylight saving is calculated for the date you choose, not today's offset.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="conv-date">Date</label>
+          <input id="conv-date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="conv-time">Time</label>
+          <input id="conv-time" type="time" step="60" required>
+        </div>
+        <div class="field">
+          <label for="conv-from">From</label>
+          <div class="combo" data-combo="from">
+            <input id="conv-from" type="text" autocomplete="off" placeholder="Timezone" aria-autocomplete="list" aria-controls="from-list" aria-expanded="false">
+            <ul class="combo-list" id="from-list" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="field">
+          <label for="conv-to">Add a To timezone</label>
+          <div class="combo" data-combo="to">
+            <input id="conv-to" type="text" autocomplete="off" placeholder="Timezone" aria-autocomplete="list" aria-controls="to-list" aria-expanded="false">
+            <ul class="combo-list" id="to-list" role="listbox" hidden></ul>
+          </div>
+        </div>
+      </div>
+      <div class="targets">
+        <span class="sr-only">Selected To timezones</span>
+        <div class="target-list" id="to-targets"></div>
+      </div>
+      <div class="results" id="conv-results" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="meet-heading">
+      <h2 id="meet-heading">Find a meeting time</h2>
+      <p class="lead">For the cities you are comparing, plus your own timezone, we look for hours on this date when everyone is inside the same working-hours window.</p>
+      <div class="meet-grid">
+        <div class="field">
+          <label for="meet-date">Date</label>
+          <input id="meet-date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="work-start">Working hours start</label>
+          <input id="work-start" type="time" step="60" value="09:00">
+        </div>
+        <div class="field">
+          <label for="work-end">Working hours end</label>
+          <input id="work-end" type="time" step="60" value="18:00">
+        </div>
+      </div>
+      <div class="bar-wrap">
+        <div class="bar-label" id="bar-label"></div>
+        <div class="bar" id="meet-bar" role="img" aria-label="Overlap of working hours"></div>
+        <p class="bar-caption" id="bar-caption"></p>
+      </div>
+      <div class="windows" id="meet-windows" aria-live="polite"></div>
+    </section>
+
+    <footer>Times use this browser's built-in timezone data. No data leaves the device.</footer>
+  </div>
+  <script src="tz.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
