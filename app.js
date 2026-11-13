@@ -23,7 +23,6 @@
     convDate: document.getElementById("conv-date"),
     convTime: document.getElementById("conv-time"),
     convResults: document.getElementById("conv-results"),
-    toTargets: document.getElementById("to-targets"),
     meetDate: document.getElementById("meet-date"),
     workStart: document.getElementById("work-start"),
     workEnd: document.getElementById("work-end"),
@@ -85,6 +84,8 @@
     scrubMin: 0,
     // On a fall-back day a wall time happens twice; true = use the later one.
     laterOccurrence: false,
+    // To cities left out of the meeting check (keys from toKey()).
+    meetExcluded: [],
   };
 
   // Last successful conversion, used by copy, calendar and countdown.
@@ -164,11 +165,30 @@
     return Tz.shortName(tz);
   }
 
+  function toKey(entry) {
+    return entry.tz + "\t" + entryLabel(entry);
+  }
+
+  function toKeys() {
+    return (state.to || []).map(toKey);
+  }
+
+  function pruneExclusions() {
+    state.meetExcluded = Tz.normalizeMeetExclusions(toKeys(), state.meetExcluded);
+  }
+
+  function isExcluded(entry) {
+    return state.meetExcluded.indexOf(toKey(entry)) !== -1;
+  }
+
+  // From city plus every To city still included in the meeting check.
   function meetingPeople() {
     const from = asEntry({ tz: state.from, label: state.fromLabel || Tz.shortName(state.from) });
     const list = [];
     if (from) list.push(from);
-    (state.to || []).forEach(function (entry) { list.push(entry); });
+    (state.to || []).forEach(function (entry) {
+      if (!isExcluded(entry)) list.push(entry);
+    });
     return list;
   }
 
@@ -324,6 +344,7 @@
     if (!state.time) state.time = currentTimeInZone(state.from);
     if (!state.meetingDate) state.meetingDate = state.date;
     if (!state.meetDateManual) state.meetingDate = state.date;
+    state.meetExcluded = hasHash ? Tz.exclusionsFromIndices(toKeys(), hash.meetExcludedIdx) : [];
     if (hasHash && hash.cityHours && hash.cityHours.length) {
       applyCityHoursList(hash.cityHours);
     }
@@ -347,6 +368,7 @@
       cityHours: state.perCityHours ? cityHoursList() : [],
       duration: state.duration,
       laterOccurrence: state.laterOccurrence,
+      meetExcludedIdx: Tz.exclusionIndices(toKeys(), state.meetExcluded),
     };
   }
 
@@ -803,35 +825,21 @@
     });
   }
 
-  function renderTargets() {
-    els.toTargets.innerHTML = "";
-    state.to.forEach(function (entry) {
-      const chip = document.createElement("span");
-      chip.className = "target-chip";
-      chip.appendChild(document.createTextNode(entryLabel(entry)));
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.setAttribute("aria-label", "Remove " + entryLabel(entry));
-      btn.textContent = "×";
-      btn.addEventListener("click", function () {
-        state.to = state.to.filter(function (z) { return !sameEntry(z, entry); });
-        syncHash();
-        renderTargets();
-        renderConverter();
-        renderPerCityRows();
-        renderMeeting();
-      });
-      chip.appendChild(btn);
-      els.toTargets.appendChild(chip);
-    });
+  function removeTarget(entry) {
+    state.to = state.to.filter(function (z) { return !sameEntry(z, entry); });
+    pruneExclusions();
+    syncHash();
+    renderConverter();
+    renderPerCityRows();
+    renderMeeting();
   }
 
   function addTarget(tz, label) {
     const entry = asEntry({ tz: tz, label: label });
     if (!entry) return;
     if (!state.to.some(function (z) { return sameEntry(z, entry); })) state.to.push(entry);
+    pruneExclusions();
     syncHash();
-    renderTargets();
     renderConverter();
     renderPerCityRows();
     renderMeeting();
@@ -846,7 +854,6 @@
     els.workStart.value = state.workStart;
     els.workEnd.value = state.workEnd;
     els.perCityHours.checked = !!state.perCityHours;
-    renderTargets();
     renderPerCityRows();
   }
 
@@ -956,9 +963,24 @@
       const toLabel = (state.to[i] && entryLabel(state.to[i])) || Tz.shortName(row.timeZone);
       const card = document.createElement("div");
       card.className = "result-card";
+      const head = document.createElement("div");
+      head.className = "result-head";
       const where = document.createElement("div");
       where.className = "where";
       where.textContent = toLabel;
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "icon-btn";
+      rm.innerHTML = closeSvg;
+      rm.setAttribute("aria-label", "Remove " + toLabel);
+      const entryForCard = state.to[i];
+      rm.addEventListener("click", function () {
+        if (entryForCard) removeTarget(entryForCard);
+        const next = els.convResults.querySelector(".result-card .icon-btn") || document.getElementById("conv-to");
+        if (next) next.focus();
+      });
+      head.appendChild(where);
+      head.appendChild(rm);
       const when = document.createElement("p");
       when.className = "when";
       when.textContent = Tz.formatTimeShort(row.wall, state.hour12);
@@ -967,7 +989,7 @@
         ' · <span class="shift">' + escapeHtml(row.dayShift) + "</span>";
       const gap = document.createElement("p");
       gap.textContent = gapLabel(row.gap, fromLabel, toLabel) + " at this date.";
-      card.appendChild(where);
+      card.appendChild(head);
       card.appendChild(when);
       card.appendChild(date);
       card.appendChild(gap);
@@ -1338,9 +1360,7 @@
     if (!date || !state.from) return;
 
     const fromLabel = state.fromLabel || Tz.shortName(state.from);
-    els.meetCities.innerHTML = "Checking <strong>" + people.map(function (e) {
-      return escapeHtml(entryLabel(e));
-    }).join("</strong>, <strong>") + "</strong>";
+    renderMeetChips();
 
     const overlap = (function () {
       try {
@@ -1440,6 +1460,74 @@
       appendWeekendNote(card, people, win.start);
       els.meetWindows.appendChild(card);
     });
+  }
+
+  function setExcluded(entry, excluded) {
+    const key = toKey(entry);
+    const list = state.meetExcluded.filter(function (k) { return k !== key; });
+    if (excluded) {
+      if (!Tz.canExcludeFromMeeting(state.to.length, state.meetExcluded.length)) return;
+      list.push(key);
+    }
+    state.meetExcluded = list;
+    pruneExclusions();
+    syncHash();
+    renderPerCityRows();
+    renderMeeting();
+  }
+
+  function renderMeetChips() {
+    const box = els.meetCities;
+    box.innerHTML = "";
+    const lab = document.createElement("span");
+    lab.className = "meet-chips-label";
+    lab.textContent = "Checking";
+    box.appendChild(lab);
+    const fromLabel = state.fromLabel || Tz.shortName(state.from);
+    const base = document.createElement("span");
+    base.className = "target-chip base-chip";
+    base.textContent = fromLabel;
+    base.title = "From city, always included";
+    box.appendChild(base);
+    const canRemove = Tz.canExcludeFromMeeting(state.to.length, state.meetExcluded.length);
+    state.to.forEach(function (entry) {
+      if (isExcluded(entry)) return;
+      const chip = document.createElement("span");
+      chip.className = "target-chip";
+      chip.appendChild(document.createTextNode(entryLabel(entry)));
+      if (canRemove) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("aria-label", "Leave " + entryLabel(entry) + " out of the meeting check");
+        btn.title = "Leave out of the meeting check";
+        btn.textContent = "×";
+        btn.addEventListener("click", function () {
+          setExcluded(entry, true);
+          const next = els.meetCities.querySelector(".target-chip button") || els.meetCities.querySelector(".meet-reset");
+          if (next) next.focus();
+        });
+        chip.appendChild(btn);
+      }
+      box.appendChild(chip);
+    });
+    if (state.meetExcluded.length) {
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.className = "meet-reset";
+      const names = state.to.filter(isExcluded).map(entryLabel);
+      reset.textContent = "Reset";
+      reset.setAttribute("aria-label", "Reset: include " + names.join(", ") + " again");
+      reset.title = "Left out: " + names.join(", ");
+      reset.addEventListener("click", function () {
+        state.meetExcluded = [];
+        syncHash();
+        renderPerCityRows();
+        renderMeeting();
+        const first = els.meetCities.querySelector(".target-chip button");
+        if (first) first.focus();
+      });
+      box.appendChild(reset);
+    }
   }
 
   function appendWeekendNote(box, people, instant) {

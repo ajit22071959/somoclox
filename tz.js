@@ -1903,6 +1903,7 @@
     if (state.workEnd) p.set("we", state.workEnd);
     if (state.perCityHours) p.set("wh", "1");
     if (state.laterOccurrence) p.set("o", "2");
+    if (state.meetExcludedIdx && state.meetExcludedIdx.length) p.set("mx", state.meetExcludedIdx.join(","));
     if (state.duration && Number(state.duration) !== DEFAULT_DURATION_MIN) p.set("dur", String(state.duration));
     const cityHours = state.cityHours || state.workHoursList;
     if (state.perCityHours && cityHours && cityHours.length) {
@@ -1944,6 +1945,7 @@
       perCityHours: p.get("wh") === "1",
       duration: parseDuration(p.get("dur")),
       laterOccurrence: p.get("o") === "2",
+      meetExcludedIdx: (p.get("mx") || "").split(",").filter(function (v) { return /^\d+$/.test(v); }).map(Number),
       cityHours: (p.get("w") || "").split(",").map(function (part) {
         const m = String(part || "").trim().match(/^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
         if (!m) return null;
@@ -2362,6 +2364,40 @@
     return { ticks: ticks, changes: changes, hours: length / HOUR };
   }
 
+  // ---------------------------------------------------------------------
+  // Leaving To cities out of the meeting check
+  // ---------------------------------------------------------------------
+  // The meeting check always includes the From city plus every To city that
+  // is not excluded, and never fewer than two cities in total.
+  function normalizeMeetExclusions(toKeys, excludedKeys) {
+    const keys = toKeys || [];
+    const out = [];
+    (excludedKeys || []).forEach(function (k) {
+      if (keys.indexOf(k) !== -1 && out.indexOf(k) === -1) out.push(k);
+    });
+    const maxExcluded = Math.max(0, keys.length - 1);
+    // Keep the exclusions in To-list order, dropping any beyond the limit.
+    out.sort(function (a, b) { return keys.indexOf(a) - keys.indexOf(b); });
+    return out.slice(0, maxExcluded);
+  }
+
+  function canExcludeFromMeeting(toCount, excludedCount) {
+    return 1 + toCount - excludedCount > 2;
+  }
+
+  function exclusionIndices(toKeys, excludedKeys) {
+    return normalizeMeetExclusions(toKeys, excludedKeys).map(function (k) { return toKeys.indexOf(k); });
+  }
+
+  function exclusionsFromIndices(toKeys, indices) {
+    const picked = [];
+    (indices || []).forEach(function (i) {
+      const n = Number(i);
+      if (Number.isInteger(n) && n >= 0 && n < toKeys.length) picked.push(toKeys[n]);
+    });
+    return normalizeMeetExclusions(toKeys, picked);
+  }
+
   return {
     DEFAULT_CITIES: DEFAULT_CITIES,
     MINUTE: MINUTE,
@@ -2436,5 +2472,9 @@
     buildIcs: buildIcs,
     googleCalendarUrl: googleCalendarUrl,
     axisTicks: axisTicks,
+    normalizeMeetExclusions: normalizeMeetExclusions,
+    canExcludeFromMeeting: canExcludeFromMeeting,
+    exclusionIndices: exclusionIndices,
+    exclusionsFromIndices: exclusionsFromIndices,
   };
 });

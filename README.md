@@ -12,6 +12,7 @@ Live site: https://ajit22071959.github.io/somoclox/
 - Finds overlapping working hours for the converter's From timezone and each To timezone (default 09:00–18:00 for everyone, or different hours per city, including night shifts that cross midnight). A labelled bar shows each city's working window and the overlap in From-zone time. If there is no overlap, it says so and suggests the closest windows.
 - Warns if a compared city's clocks change in the next 30 days, and if the gap between two zones on the converter date is not the same as today's gap.
 - Lets you switch between 12-hour and 24-hour time, and copy a link that reproduces the current view.
+- Each converted city has its own × to remove it. In Find a meeting time, the cities are chips: × on a To city leaves it out of the meeting check only (the From city and at least two cities always stay), Reset brings them all back, and the shared link remembers what was left out.
 - Tap or drag on the meeting bar (or use the arrow keys on it) to pick a time, snapped to 15 minutes. The time fills in the converter, and a marker shows it on the bar.
 - Shows a live countdown next to the converted time ("Starts in 3h 20m", "Started 25m ago").
 - Copies the converted time as one line of text, for example `Tue 10 Nov, 3:00 PM London / 4:00 PM Paris / 8:30 PM Hyderabad`, using your 12/24-hour choice and the city names you picked. The Compare cities grid has the same button.

@@ -1046,3 +1046,43 @@ describe("repeated fall-back hour in the shared link", function () {
     assert.doesNotMatch(Tz.encodeState({ from: "America/New_York" }), /(^|&)o=/);
   });
 });
+
+describe("leaving cities out of the meeting check", function () {
+  const keys = ["Europe/London\tLondon", "Asia/Kolkata\tIndore", "Asia/Tokyo\tTokyo"];
+
+  it("keeps only known keys, in To-list order, without duplicates", function () {
+    assert.deepEqual(Tz.normalizeMeetExclusions(keys, ["Asia/Tokyo\tTokyo", "Gone\tX", "Europe/London\tLondon", "Asia/Tokyo\tTokyo"]),
+      ["Europe/London\tLondon", "Asia/Tokyo\tTokyo"]);
+    assert.deepEqual(Tz.normalizeMeetExclusions(keys, []), []);
+  });
+
+  it("always leaves at least two cities (From plus one To)", function () {
+    assert.deepEqual(Tz.normalizeMeetExclusions(keys, keys), keys.slice(0, 2));
+    assert.deepEqual(Tz.normalizeMeetExclusions(keys.slice(0, 1), keys), []);
+    assert.equal(Tz.canExcludeFromMeeting(1, 0), false);
+    assert.equal(Tz.canExcludeFromMeeting(2, 0), true);
+    assert.equal(Tz.canExcludeFromMeeting(2, 1), false);
+    assert.equal(Tz.canExcludeFromMeeting(3, 1), true);
+  });
+
+  it("treats a newly added city as included and drops removed ones", function () {
+    const excluded = ["Asia/Kolkata\tIndore"];
+    const added = keys.concat(["America/New_York\tNew York"]);
+    assert.deepEqual(Tz.normalizeMeetExclusions(added, excluded), excluded);
+    const removed = keys.filter(function (k) { return k !== "Asia/Kolkata\tIndore"; });
+    assert.deepEqual(Tz.normalizeMeetExclusions(removed, excluded), []);
+  });
+
+  it("round-trips through the share link as To-list positions", function () {
+    const idx = Tz.exclusionIndices(keys, ["Asia/Tokyo\tTokyo", "Europe/London\tLondon"]);
+    assert.deepEqual(idx, [0, 2]);
+    const enc = Tz.encodeState({ from: "Europe/Paris", meetExcludedIdx: idx });
+    assert.match(enc, /(^|&)mx=0%2C2(&|$)/);
+    const dec = Tz.decodeState(enc);
+    assert.deepEqual(dec.meetExcludedIdx, [0, 2]);
+    assert.deepEqual(Tz.exclusionsFromIndices(keys, dec.meetExcludedIdx), ["Europe/London\tLondon", "Asia/Tokyo\tTokyo"]);
+    assert.deepEqual(Tz.exclusionsFromIndices(keys, [9, -1, "x"]), []);
+    assert.doesNotMatch(Tz.encodeState({ from: "Europe/Paris", meetExcludedIdx: [] }), /mx=/);
+    assert.deepEqual(Tz.decodeState("").meetExcludedIdx, []);
+  });
+});

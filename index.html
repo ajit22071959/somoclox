@@ -427,6 +427,22 @@
       line-height: 1;
     }
     .target-chip button:hover { color: #f0e0c0; }
+    .meet-cities { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .meet-chips-label { font-size: 13px; color: #dbe7d6; margin-right: 2px; }
+    .base-chip { padding-right: 12px; border-color: #8aa889; background: #24392b; }
+    .meet-reset {
+      border: 0;
+      background: none;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 650;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      padding: 4px 2px;
+    }
+    .meet-reset:hover { color: #f0e0c0; }
+    .result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .result-head .where { min-width: 0; padding-top: 4px; }
 
     .actions {
       display: flex;
@@ -1037,10 +1053,6 @@
           <ul class="combo-list" id="to-list" role="listbox" hidden></ul>
         </div>
       </div>
-      <div class="targets">
-        <span class="sr-only">Selected To timezones</span>
-        <div class="target-list" id="to-targets"></div>
-      </div>
       <div class="conv-summary" id="conv-summary" hidden>
         <p class="conv-when" id="conv-when"></p>
         <span class="countdown" id="countdown" data-state="future"></span>
@@ -1070,7 +1082,7 @@
 
     <section class="panel" aria-labelledby="meet-heading">
       <h2 id="meet-heading">Find a meeting time</h2>
-      <p class="lead">For the From timezone and each To timezone in the converter above, we look for hours on this date when everyone is inside their working hours.</p>
+      <p class="lead">For the From timezone and each To timezone in the converter above, we look for hours on this date when everyone is inside their working hours. Tap × on a city to leave it out of this check only.</p>
       <div class="meet-grid" id="meet-shared-hours">
         <div class="field">
           <label for="meet-date">Date</label>
@@ -1090,7 +1102,7 @@
         <span>Different working hours for each city</span>
       </label>
       <div class="hours-rows" id="per-city-rows" hidden></div>
-      <p class="meet-cities" id="meet-cities"></p>
+      <div class="meet-cities" id="meet-cities" role="group" aria-label="Cities in the meeting check"></div>
       <div class="bar-wrap" id="meet-bar-wrap">
         <p class="bar-hint" id="bar-hint">Tap or drag on the bar to pick a time. It fills in the converter above.</p>
         <div class="bar-chart" id="bar-chart" tabindex="0" role="slider" aria-label="Pick a meeting time" aria-valuemin="0" aria-valuemax="1440" aria-valuenow="0" aria-valuetext="No time picked">
