@@ -877,12 +877,57 @@
     els.convTools.hidden = true;
   }
 
+  // Card header: city name plus a × that removes the city from the converter.
+  function resultHead(entry, label) {
+    const head = document.createElement("div");
+    head.className = "result-head";
+    const where = document.createElement("div");
+    where.className = "where";
+    where.textContent = label;
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "icon-btn";
+    rm.innerHTML = closeSvg;
+    rm.setAttribute("aria-label", "Remove " + label);
+    rm.addEventListener("click", function () {
+      if (entry) removeTarget(entry);
+      const next = els.convResults.querySelector(".result-card .icon-btn") || document.getElementById("conv-to");
+      if (next) next.focus();
+    });
+    head.appendChild(where);
+    head.appendChild(rm);
+    return head;
+  }
+
+  function missingInputNote() {
+    return Tz.converterInputNote(state.date, state.time);
+  }
+
+  // Small cards shown when there is nothing to convert yet, so each To city
+  // can still be seen and removed.
+  function renderPendingCards(note) {
+    const box = els.convResults;
+    if (note) {
+      const p = document.createElement("div");
+      p.className = "notice pending-note";
+      p.textContent = note;
+      box.appendChild(p);
+    }
+    state.to.forEach(function (entry) {
+      const card = document.createElement("div");
+      card.className = "result-card pending-card";
+      card.appendChild(resultHead(entry, entryLabel(entry)));
+      box.appendChild(card);
+    });
+  }
+
   function renderConverter() {
     const box = els.convResults;
     box.innerHTML = "";
     const parts = partsFromForm();
     if (!parts || !state.from || !state.to.length) {
       hideConverterExtras();
+      if (state.to.length) renderPendingCards(missingInputNote());
       updatePickMarker();
       return;
     }
@@ -897,6 +942,7 @@
       errBox.className = "form-errors";
       errBox.textContent = "That date and time could not be converted.";
       box.appendChild(errBox);
+      renderPendingCards(null);
       updatePickMarker();
       return;
     }
@@ -963,24 +1009,7 @@
       const toLabel = (state.to[i] && entryLabel(state.to[i])) || Tz.shortName(row.timeZone);
       const card = document.createElement("div");
       card.className = "result-card";
-      const head = document.createElement("div");
-      head.className = "result-head";
-      const where = document.createElement("div");
-      where.className = "where";
-      where.textContent = toLabel;
-      const rm = document.createElement("button");
-      rm.type = "button";
-      rm.className = "icon-btn";
-      rm.innerHTML = closeSvg;
-      rm.setAttribute("aria-label", "Remove " + toLabel);
-      const entryForCard = state.to[i];
-      rm.addEventListener("click", function () {
-        if (entryForCard) removeTarget(entryForCard);
-        const next = els.convResults.querySelector(".result-card .icon-btn") || document.getElementById("conv-to");
-        if (next) next.focus();
-      });
-      head.appendChild(where);
-      head.appendChild(rm);
+      const head = resultHead(state.to[i], toLabel);
       const when = document.createElement("p");
       when.className = "when";
       when.textContent = Tz.formatTimeShort(row.wall, state.hour12);

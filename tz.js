@@ -2398,6 +2398,15 @@
     return normalizeMeetExclusions(toKeys, picked);
   }
 
+  // What to ask for when the converter's date or time is missing or invalid.
+  function converterInputNote(date, time) {
+    const noDate = !parseIsoDate(date || "");
+    const noTime = !parseIsoTime(time || "");
+    if (noDate && !noTime) return "Enter a date to convert.";
+    if (noTime && !noDate) return "Enter a time to convert.";
+    return "Enter a date and time to convert.";
+  }
+
   return {
     DEFAULT_CITIES: DEFAULT_CITIES,
     MINUTE: MINUTE,
@@ -2472,6 +2481,7 @@
     buildIcs: buildIcs,
     googleCalendarUrl: googleCalendarUrl,
     axisTicks: axisTicks,
+    converterInputNote: converterInputNote,
     normalizeMeetExclusions: normalizeMeetExclusions,
     canExcludeFromMeeting: canExcludeFromMeeting,
     exclusionIndices: exclusionIndices,

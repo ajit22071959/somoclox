@@ -1086,3 +1086,13 @@ describe("leaving cities out of the meeting check", function () {
     assert.deepEqual(Tz.decodeState("").meetExcludedIdx, []);
   });
 });
+
+describe("converter prompt when date or time is missing", function () {
+  it("asks for whatever is missing", function () {
+    assert.equal(Tz.converterInputNote("", "10:00"), "Enter a date to convert.");
+    assert.equal(Tz.converterInputNote("2026-11-13", ""), "Enter a time to convert.");
+    assert.equal(Tz.converterInputNote("", ""), "Enter a date and time to convert.");
+    assert.equal(Tz.converterInputNote("13/11/2026", "10:00"), "Enter a date to convert.");
+    assert.equal(Tz.converterInputNote(undefined, undefined), "Enter a date and time to convert.");
+  });
+});
